@@ -1,0 +1,74 @@
+## CLIENT IGNORES
+
+# IDE's
+.vs/
+.vscode/
+
+
+# ------------------------------
+# OS/editor/general clutter
+# ------------------------------
+
+*.log
+!.github/
+.github/**.prompt.md
+*.prompt.md
+.clang-format
+
+# ------------------------------
+# Secrets and sensitive files (GLOBAL)
+# ------------------------------
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.jks
+*.keystore
+SECRETS
+docs/
+interface.md
+
+
+# ------------------------------
+# Python (misc tooling/scripts)
+# ------------------------------
+python_scripts/
+__pycache__/
+*.pyc
+venv/
+*.csv
+
+*.code-workspace
+devcommands.txt
+
+
+
+# Misc top-level
+installer/
+/installer
+tests/
+data/
+*.exe
+misc/comprison_data_files/
+misc/component_data/
+comparison.json
+#appcast.xml
+src/logging/Logger_.md
+
+
+build/
+
+*.obj
+*.pch
+*.pdb
+*.ipch
+*.sln.docstates
+*.user
+*.VC.db
+*.VC.VC.opendb
+
+

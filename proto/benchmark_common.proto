@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package checkmark.benchmarks;
+
+// Envelope for lightweight versioning
+message ClientEnvelope {
+  string client_version = 1;   // e.g., app version
+  string schema_version = 2;   // bump when breaking changes land
+}
+
+// CPU core usage entry corresponding to "Core <N> (%)"
+message CoreUsage {
+  int32 core_index = 1;  // N in "Core N (%)"
+  float usage_pct = 2;   // percent 0..100
+}
+
+// Metadata describing the run
+message BenchmarkRunMeta {
+  string run_id = 1;            // app-side hash or server-assigned
+  string timestamp_utc = 2;     // ISO-8601 string
+  string user_system_id = 3;    // sanitized identifier
+  uint32 display_width = 4;     // optional
+  uint32 display_height = 5;    // optional
+}

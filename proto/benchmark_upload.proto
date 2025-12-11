@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package checkmark.benchmarks;
+
+import "benchmark_common.proto";
+import "benchmark_public.proto";
+import "benchmark_full.proto";
+
+// Upload request containing public data and original artifacts
+message BenchmarkUploadRequest {
+  ClientEnvelope env = 1;
+  BenchmarkRunMeta meta = 2;
+
+  PublicSummary public_summary = 3;
+  repeated PublicSample public_samples = 4;
+
+  // Structured original artifacts
+  FullRun full_run = 5;
+  SpecsDocument specs = 6;
+  OptimizationSettingsDocument optimization = 7;
+
+  // Original local files (CSV, JSON specs, optimization settings, etc.)
+  repeated Attachment attachments = 10;
+}
+
+message BenchmarkUploadResponse {
+  bool accepted = 1;
+  string run_id = 2;     // authoritative server ID
+  string message = 3;
+}

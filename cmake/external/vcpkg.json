@@ -1,0 +1,11 @@
+{
+  "dependencies": [
+    "qtbase",
+    "cpuid",
+    "presentmon",
+    "spdlog",
+    "krabsetw",
+    "winsparkle",
+    "protobuf"
+  ]
+}

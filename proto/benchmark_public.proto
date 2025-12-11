@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package checkmark.benchmarks;
+
+option go_package = "localserver/proto";
+
+import "benchmark_common.proto";
+
+// Public sample row – a filtered subset of the full CSV used for comparisons
+message PublicSample {
+  uint32 time = 1;                  // "Time"
+  float fps = 2;                    // "FPS"
+
+  // Optional fields (omitted if not available)
+  float frame_time_ms = 3;          // "Frame Time"
+  float frame_time_variance = 4;    // "Frame Time Variance"
+  float highest_frame_time_ms = 5;  // "Highest Frame Time"
+  float p1_high_frame_time_ms = 6;  // "1% High Frame Time"
+  float p5_high_frame_time_ms = 7;  // "5% High Frame Time"
+
+  float gpu_util_pct = 8;           // "GPU Utilization"
+  float gpu_usage_pct = 9;          // "GPU Usage"
+
+  float memory_load_pct = 10;       // "Memory Load"
+  double memory_usage_mb = 11;      // "Memory Usage (MB)"
+
+  uint64 gpu_mem_used_bytes = 12;   // "GPU Mem Used" (normalize to bytes)
+  uint64 gpu_mem_total_bytes = 13;  // "GPU Mem Total" (normalize to bytes)
+
+  repeated CoreUsage core_usages = 14; // Per-core usages
+}
+
+// Per-column aggregate stats computed client-side over the entire run
+message ColumnStat {
+  string column = 1;
+  double avg = 2;
+  double min = 3;
+  double max = 4;
+  uint32 valid_samples = 5;
+  uint32 total_samples = 6;
+}
+
+// Aggregated summary for a run; keep minimal for now.
+message PublicSummary {
+  double avg_fps = 1;
+  double avg_frame_time_ms = 2;
+  double avg_gpu_usage_pct = 3;
+  double avg_memory_load_pct = 4;
+  double p1_low_fps_cumulative = 5;   // optional if available
+  double p5_low_fps_cumulative = 6;   // optional if available
+  double highest_frame_time_ms = 7;
+  
+  // System specifications from specs file
+  string cpu_model = 8;              // CPU Information - "Model"
+  string memory_total_physical = 9;   // Memory Information - "Total Physical"
+  string memory_clock = 10;          // Memory Information - "Clock"
+  string gpu_primary_model = 11;     // GPU Devices - GPU 1 (Primary) - "Model"
+  string graphics_resolution = 12;   // Rust Configuration - "graphics.resolution"
+  repeated ColumnStat column_stats = 13; // min/max/avg + counts for every column
+}
+
+// GET a public run (summary + public samples) for display/comparison
+message PublicRunRequest {
+  string run_id = 1;
+}
+
+message PublicRunResponse {
+  BenchmarkRunMeta meta = 1;
+  PublicSummary summary = 2;
+  repeated PublicSample samples = 3;
+}
+
+// Menu of available comparison datasets
+message BenchmarkMenuRequest {
+  // Reserved for filters/pagination
+}
+
+message BenchmarkMenuItem {
+  string run_id = 1;
+  string label = 2;        // e.g., timestamp + short hash
+  string game = 3;         // optional metadata
+  string map = 4;          // optional metadata
+}
+
+message BenchmarkMenuResponse {
+  repeated BenchmarkMenuItem items = 1;
+  // Distinct selectable component values so the client can build filters
+  BenchmarkCategories categories = 2;
+}
+
+// Distinct values per component category (capped server-side)
+message BenchmarkCategories {
+  repeated string cpu_models = 1;
+  repeated string gpu_primary_models = 2;
+  repeated string memory_clocks = 3;
+  repeated string memory_total_physicals = 4;
+}
+
+// Leaderboard query and response
+enum LeaderboardMode {
+  FULL_TOP5 = 0;
+  FULL_MEDIAN = 1;
+  FILTERED = 2;
+}
+
+message LeaderboardFilter {
+  string key = 1;    // e.g., "cpu_model"
+  string value = 2;  // exact match
+}
+
+message LeaderboardQuery {
+  LeaderboardMode mode = 1;
+  repeated LeaderboardFilter filters = 2; // AND semantics
+}
+
+message LeaderboardMeta {
+  uint32 total_matches = 1;
+  string selection_policy = 2; // e.g., "top5", "top3+median", "top3+25%+median", "median-only", "no_matches"
+  repeated LeaderboardFilter applied_filters = 3;
+  string reason = 4; // optional: e.g., "no_matches"
+}
+
+message LeaderboardResponse {
+  repeated PublicRunResponse runs = 1;
+  LeaderboardMeta meta = 2;
+}

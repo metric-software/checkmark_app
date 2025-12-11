@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package checkmark.benchmarks;
+
+// Full CSV representation as ordered rows aligned with headers
+message FullSample {
+  // Values are aligned to FullRun.headers by index.
+  // Use empty string for missing/optional values.
+  repeated string values = 1;
+}
+
+message FullRun {
+  repeated string headers = 1;          // Original CSV header order (includes dynamic core columns)
+  repeated FullSample samples = 2;      // Rows in order; values.size() == headers.size()
+}
+
+// Specs document (JSON)
+message SpecsDocument {
+  string json = 1;                      // JSON string of system specs
+}
+
+// Optimization settings document (JSON)
+message OptimizationSettingsDocument {
+  string json = 1;                      // JSON string of optimization settings
+}
+
+// Attachment wrapper for uploading original/local artifacts (csv/json/specs)
+message Attachment {
+  string filename = 1;          // original name
+  string mime_type = 2;         // e.g., text/csv, application/json
+  bytes content = 3;            // small files inline; consider chunking later
+}

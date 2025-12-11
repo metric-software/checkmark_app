@@ -1,0 +1,617 @@
+syntax = "proto3";
+
+package diagnostic;
+
+option go_package = "localserver/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Service definition for the three main operations
+service DiagnosticService {
+  // Menu request (GET) - returns available components
+  rpc GetMenu(MenuRequest) returns (MenuResponse);
+  
+  // Diagnostics upload (POST) - submit diagnostic data
+  rpc UploadDiagnostics(DiagnosticSubmission) returns (UploadResponse);
+  
+  // Component comparison download (GET) - get specific component data
+  rpc GetComponentComparison(ComponentRequest) returns (ComponentComparison);
+}
+
+// ==================== MENU OPERATIONS ====================
+
+message MenuRequest {
+  // Empty request for menu data
+}
+
+message MenuResponse {
+  repeated string available_cpus = 1;
+  repeated string available_gpus = 2;
+  repeated string available_memory = 3;
+  repeated string available_drives = 4;
+  map<string, string> endpoints = 5;
+}
+
+// ==================== DIAGNOSTIC SUBMISSION ====================
+
+message DiagnosticSubmission {
+  CPUData cpu = 1;
+  GPUData gpu = 2;
+  MemoryData memory = 3;
+  DriveData drives = 4;
+  NetworkData network = 5;
+  SystemData system = 6;
+  MetadataInfo metadata = 7;
+  // Additional artifacts to accompany diagnostics
+  // JSON document capturing optimization settings applied on the system at run time
+  string optimization_settings_json = 8;
+  // Raw PDH metrics captured during the run (CSV content inline)
+  bytes pdh_metrics_csv = 9;
+  // Original filename for the PDH CSV (optional, for server-side storage)
+  string pdh_metrics_filename = 10;
+}
+
+// CPU diagnostic data
+message CPUData {
+  CPUInfo info = 1;
+  CPUResults results = 2;
+}
+
+message CPUInfo {
+  string architecture = 1;
+  bool avx2_support = 2;
+  bool avx_support = 3;
+  int32 base_clock_mhz = 4;
+  CPUBoostSummary boost_summary = 5;
+  CPUCacheInfo cache_info = 6;
+  CPUColdStart cold_start = 7;
+  int32 cores = 8;
+  repeated CPUCoreDetail cores_detail = 9;
+  int32 max_clock_mhz = 10;
+  string model = 11;
+  string smt = 12;
+  string socket = 13;
+  int32 threads = 14;
+  CPUThrottling throttling = 15;
+  string vendor = 16;
+  string virtualization = 17;
+}
+
+message CPUBoostSummary {
+  double all_core_power_w = 1;
+  int32 best_boosting_core = 2;
+  double idle_power_w = 3;
+  int32 max_boost_delta_mhz = 4;
+  double single_core_power_w = 5;
+}
+
+message CPUCacheInfo {
+  int32 l1_kb = 1;
+  int32 l2_kb = 2;
+  int32 l3_kb = 3;
+}
+
+message CPUColdStart {
+  double avg_response_time_us = 1;
+  double max_response_time_us = 2;
+  double min_response_time_us = 3;
+  double std_dev_us = 4;
+  double variance_us = 5;
+}
+
+message CPUCoreDetail {
+  CPUBoostMetrics boost_metrics = 1;
+  int32 clock_mhz = 2;
+  int32 core_number = 3;
+  double load_percent = 4;
+}
+
+message CPUBoostMetrics {
+  int32 all_core_clock_mhz = 1;
+  int32 boost_delta_mhz = 2;
+  int32 idle_clock_mhz = 3;
+  int32 single_load_clock_mhz = 4;
+}
+
+message CPUThrottling {
+  double clock_drop_percent = 1;
+  bool detected = 2;
+  int32 detected_time_seconds = 3;
+  int32 peak_clock = 4;
+  int32 sustained_clock = 5;
+}
+
+message CPUResults {
+  double avx = 1;
+  double four_thread = 2;
+  double game_sim_large = 3;
+  double game_sim_medium = 4;
+  double game_sim_small = 5;
+  double multi_core = 6;
+  double prime_time = 7;
+  repeated CacheLatency raw_cache_latencies = 8;
+  double simd_scalar = 9;
+  double single_core = 10;
+  CPUSpecificCacheLatencies specific_cache_latencies = 11;
+}
+
+message CacheLatency {
+  double latency = 1;
+  int32 size_kb = 2;
+}
+
+message CPUSpecificCacheLatencies {
+  double l1_ns = 1;
+  double l2_ns = 2;
+  double l3_ns = 3;
+  double ram_ns = 4;
+}
+
+// GPU diagnostic data
+message GPUData {
+  GPUInfo info = 1;
+  GPUResults results = 2;
+  bool tested = 3;
+}
+
+message GPUInfo {
+  repeated GPUDevice devices = 1;
+  string driver = 2;
+  int32 memory_mb = 3;
+  string model = 4;
+}
+
+message GPUDevice {
+  string device_id = 1;
+  string driver_date = 2;
+  string driver_version = 3;
+  bool has_geforce_experience = 4;
+  bool is_primary = 5;
+  int32 memory_mb = 6;
+  string name = 7;
+  int32 pci_link_width = 8;
+  int32 pcie_link_gen = 9;
+  string vendor = 10;
+}
+
+message GPUResults {
+  double fps = 1;
+  int32 frames = 2;
+  double render_time_ms = 3;
+}
+
+// Memory diagnostic data  
+message MemoryData {
+  MemoryInfo info = 1;
+  MemoryResults results = 2;
+}
+
+message MemoryInfo {
+  double available_memory_gb = 1;
+  string channel_status = 2;
+  int32 clock_speed_mhz = 3;
+  repeated MemoryModule modules = 4;
+  MemoryPageFile page_file = 5;
+  double total_memory_gb = 6;
+  string type = 7;
+  bool xmp_enabled = 8;
+}
+
+message MemoryModule {
+  double capacity_gb = 1;
+  int32 configured_clock_speed_mhz = 2;
+  string device_locator = 3;
+  string manufacturer = 4;
+  string memory_type = 5;
+  string part_number = 6;
+  int32 slot = 7;
+  int32 speed_mhz = 8;
+  string xmp_status = 9;
+}
+
+message MemoryPageFile {
+  bool exists = 1;
+  repeated MemoryPageFileLocation locations = 2;
+  string primary_drive = 3;
+  bool system_managed = 4;
+  int32 total_size_mb = 5;
+}
+
+message MemoryPageFileLocation {
+  string path = 1;
+}
+
+message MemoryResults {
+  double bandwidth = 1;
+  double latency = 2;
+  double read_time = 3;
+  MemoryStabilityTest stability_test = 4;
+  double write_time = 5;
+}
+
+message MemoryStabilityTest {
+  int32 completed_loops = 1;
+  int32 completed_patterns = 2;
+  int32 error_count = 3;
+  bool passed = 4;
+  bool test_performed = 5;
+  int32 tested_size_mb = 6;
+}
+
+// Drive diagnostic data
+message DriveData {
+  repeated DriveItem items = 1;
+  bool tested = 2;
+}
+
+message DriveItem {
+  DriveInfo info = 1;
+  DriveResults results = 2;
+}
+
+message DriveInfo {
+  int32 free_space_gb = 1;
+  string interface_type = 2;
+  bool is_ssd = 3;
+  bool is_system_drive = 4;
+  string model = 5;
+  string path = 6;
+  int32 size_gb = 7;
+}
+
+message DriveResults {
+  double access_time = 1;
+  double iops_4k = 2;
+  double read_speed = 3;
+  double write_speed = 4;
+}
+
+// Network diagnostic data
+message NetworkData {
+  NetworkResults results = 1;
+  bool tested = 2;
+}
+
+message NetworkResults {
+  double average_jitter_ms = 1;
+  double average_latency_ms = 2;
+  double baseline_latency_ms = 3;
+  double download_latency_ms = 4;
+  bool has_bufferbloat = 5;
+  string issues = 6;
+  double packet_loss_percent = 7;
+  repeated RegionalLatency regional_latencies = 8;
+  repeated ServerResult server_results = 9;
+  double upload_latency_ms = 10;
+}
+
+message RegionalLatency {
+  double latency_ms = 1;
+  string region = 2;
+}
+
+message ServerResult {
+  double avg_latency_ms = 1;
+  string hostname = 2;
+  string ip_address = 3;
+  double jitter_ms = 4;
+  double max_latency_ms = 5;
+  double min_latency_ms = 6;
+  double packet_loss_percent = 7;
+  int32 received_packets = 8;
+  string region = 9;
+  int32 sent_packets = 10;
+}
+
+// System diagnostic data
+message SystemData {
+  SystemInfo info = 1;
+}
+
+message SystemInfo {
+  repeated DriverInfo audio_drivers = 1;
+  BackgroundActivity background = 2;
+  BIOSInfo bios = 3;
+  repeated DriverInfo chipset_drivers = 4;
+  KernelMemoryInfo kernel_memory = 5;
+  repeated MonitorInfo monitors = 6;
+  MotherboardInfo motherboard = 7;
+  repeated DriverInfo network_drivers = 8;
+  OSInfo os = 9;
+  PowerInfo power = 10;
+  bool virtualization = 11;
+}
+
+message DriverInfo {
+  string device_name = 1;
+  string provider_name = 2;
+  string driver_version = 3;
+  string driver_date = 4;
+  bool is_date_valid = 5;
+}
+
+message BackgroundActivity {
+  repeated double cpu_percentages = 1;
+  repeated double gpu_percentages = 2;
+  bool has_dpc_latency_issues = 3;
+  bool has_high_cpu_processes = 4;
+  bool has_high_gpu_processes = 5;
+  bool has_high_memory_processes = 6;
+  double max_process_cpu = 7;
+  double max_process_memory_mb = 8;
+  MemoryMetrics memory_metrics = 9;
+  repeated double memory_usages_mb = 10;
+  BackgroundSummary summary = 11;
+  double system_dpc_time = 12;
+  double system_interrupt_time = 13;
+  double total_cpu_usage = 14;
+  double total_gpu_usage = 15;
+}
+
+message MemoryMetrics {
+  double physical_total_mb = 1;
+  double physical_available_mb = 2;
+  double physical_used_mb = 3;
+  double physical_used_percent = 4;
+  double commit_total_mb = 5;
+  double commit_limit_mb = 6;
+  double commit_percent = 7;
+  double user_mode_private_mb = 8;
+  double kernel_total_mb = 9;
+  double kernel_paged_mb = 10;
+  double kernel_nonpaged_mb = 11;
+  double file_cache_mb = 12;
+  double other_memory_mb = 13;
+}
+
+message BackgroundSummary {
+  bool has_background_issues = 1;
+  string overall_impact = 2;
+  bool high_interrupt_activity = 3;
+}
+
+message BIOSInfo {
+  string date = 1;
+  string manufacturer = 2;
+  string version = 3;
+}
+
+message KernelMemoryInfo {
+  string note = 1;
+}
+
+message MonitorInfo {
+  string device_name = 1;
+  string display_name = 2;
+  int32 width = 3;
+  int32 height = 4;
+  int32 refresh_rate = 5;
+  bool is_primary = 6;
+}
+
+message MotherboardInfo {
+  string manufacturer = 1;
+  string model = 2;
+  string chipset = 3;
+  string chipset_driver = 4;
+}
+
+message OSInfo {
+  string version = 1;
+  string build = 2;
+  bool is_windows11 = 3;
+}
+
+message PowerInfo {
+  string plan = 1;
+  bool high_performance = 2;
+  bool game_mode = 3;
+}
+
+// Metadata
+message SystemIdentifier {
+  string fingerprint = 1;
+  string motherboard = 2;
+  string cpu = 3;
+  string gpu = 4;
+}
+
+message MetadataInfo {
+  string combined_identifier = 1;
+  string profile_last_updated = 2;
+  bool run_as_admin = 3;
+  string system_hash = 4;
+  SystemIdentifier system_id = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  string user_id = 7;
+  string version = 8;
+}
+
+message UploadResponse {
+  bool success = 1;
+  string message = 2;
+  string saved_as = 3;
+  string error = 4;
+}
+
+// ==================== COMPONENT COMPARISON ====================
+
+message ComponentRequest {
+  string component_type = 1; // cpu, gpu, memory, drive
+  string model_name = 2;
+}
+
+message ComponentComparison {
+  oneof component {
+    CPUComparison cpu = 1;
+    GPUComparison gpu = 2;
+    MemoryComparison memory = 3;
+    DriveComparison drive = 4;
+  }
+}
+
+// CPU comparison response (matches README structure)
+message CPUComparison {
+  string date = 1;
+  string model = 2;
+  string full_model = 3;
+  string architecture = 4;
+  string socket = 5;
+  int32 cores = 6;
+  int32 threads = 7;
+  int32 base_frequency_mhz = 8;
+  int32 boost_frequency_mhz = 9;
+  string smt = 10;
+  string virtualization = 11;
+  CPUThrottlingComp throttling = 12;
+  CPUColdStartComp cold_start = 13;
+  CPUCacheComp cache = 14;
+  repeated CPUCoreDetailComp cores_detail = 15;
+  CPUBenchmarkComp benchmark_results = 16;
+  repeated CPUCacheLatencyComp cache_latencies = 17;
+}
+
+message CPUThrottlingComp {
+  bool detected = 1;
+  int32 peak_clock = 2;
+  int32 sustained_clock = 3;
+  int32 clock_drop_percent = 4;
+  int32 detected_time_seconds = 5;
+}
+
+message CPUColdStartComp {
+  double avg_response_time_us = 1;
+  double min_response_time_us = 2;
+  double max_response_time_us = 3;
+  double std_dev_us = 4;
+}
+
+message CPUCacheComp {
+  int32 l1_kb = 1;
+  int32 l2_kb = 2;
+  int32 l3_kb = 3;
+}
+
+message CPUCoreDetailComp {
+  int32 core_number = 1;
+  int32 clock_mhz = 2;
+  int32 load_percent = 3;
+  CPUBoostMetricsComp boost_metrics = 4;
+}
+
+message CPUBoostMetricsComp {
+  int32 all_core_clock_mhz = 1;
+  int32 boost_delta_mhz = 2;
+  int32 idle_clock_mhz = 3;
+  int32 single_load_clock_mhz = 4;
+}
+
+message CPUBenchmarkComp {
+  double single_core_ms = 1;
+  double multi_core_ms = 2;
+  double four_thread_ms = 3;
+  double simd_scalar_us = 4;
+  double avx_us = 5;
+  double prime_time_ms = 6;
+  double game_sim_small_ups = 7;
+  double game_sim_medium_ups = 8;
+  double game_sim_large_ups = 9;
+}
+
+message CPUCacheLatencyComp {
+  double latency = 1;
+  int32 size_kb = 2;
+}
+
+// GPU comparison response
+message GPUComparison {
+  string date = 1;
+  bool tested = 2;
+  string model = 3;
+  string full_model = 4;
+  string vendor = 5;
+  int32 vram_mb = 6;
+  string driver_version = 7;
+  string pcie_gen = 8;
+  string pci_link_width = 9;
+  GPUBenchmarkComp benchmark_results = 10;
+  string system_id = 11;
+}
+
+message GPUBenchmarkComp {
+  double fps = 1;
+  int32 frames = 2;
+}
+
+// Memory comparison response
+message MemoryComparison {
+  string date = 1;
+  string type = 2;
+  double total_memory_gb = 3;
+  double available_memory_gb = 4;
+  int32 frequency_mhz = 5;
+  string channel_status = 6;
+  bool xmp_enabled = 7;
+  repeated MemoryModuleComp modules = 8;
+  MemoryPageFileComp page_file = 9;
+  MemoryBenchmarkComp benchmark_results = 10;
+  MemoryStabilityTestComp stability_test = 11;
+}
+
+message MemoryModuleComp {
+  double capacity_gb = 1;
+  int32 configured_clock_speed_mhz = 2;
+  string device_locator = 3;
+  string manufacturer = 4;
+  string memory_type = 5;
+  string part_number = 6;
+  int32 slot = 7;
+  int32 speed_mhz = 8;
+  string xmp_status = 9;
+}
+
+message MemoryPageFileComp {
+  bool exists = 1;
+  bool system_managed = 2;
+  int32 total_size_mb = 3;
+  string primary_drive = 4;
+  repeated string drive_letters = 5;
+}
+
+message MemoryBenchmarkComp {
+  double bandwidth_mb_s = 1;
+  double latency_ns = 2;
+  double read_time_gb_s = 3;
+  double write_time_gb_s = 4;
+}
+
+message MemoryStabilityTestComp {
+  bool test_performed = 1;
+  bool passed = 2;
+  int32 error_count = 3;
+  int32 tested_size_mb = 4;
+  int32 completed_loops = 5;
+}
+
+// Drive comparison response
+message DriveComparison {
+  bool tested = 1;
+  string date = 2;
+  string name = 3;
+  string model = 4;
+  string type = 5;
+  int32 size_gb = 6;
+  int32 free_space_gb = 7;
+  string interface = 8;
+  string serial_number = 9;
+  bool is_system_drive = 10;
+  DriveBenchmarkComp benchmark_results = 11;
+  string system_id = 12;
+}
+
+message DriveBenchmarkComp {
+  double read_speed_mb_s = 1;
+  double write_speed_mb_s = 2;
+  double iops_4k = 3;
+  double access_time_ms = 4;
+}

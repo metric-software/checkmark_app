@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="third-party">../../build/third-party</file>
+    <file alias="license">../../LICENSE</file>
+    <file alias="terms">../../TERMS.md</file>
+    <file alias="privacy">../../PRIVACY.md</file>
+  </qresource>
+</RCC>

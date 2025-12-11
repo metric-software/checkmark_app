@@ -1,0 +1,1953 @@
+{
+    "version": 1,
+    "registry_settings": [
+        {
+            "id": "win.maintenance.disable",
+            "name": "Windows Maintenance",
+            "description": "Controls Windows maintenance resource hogging tasks",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Schedule\\Maintenance",
+            "registry_value_name": "MaintenanceDisabled",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "System",
+            "subcategory": "Maintenance",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Disabled (reduces resource usage)"
+                }
+            ]
+        },
+        {
+            "id": "win.desktop.menudelay",
+            "name": "Menu Show Delay",
+            "description": "Controls the delay before displaying menus and speeds up opening Start Menu",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "MenuShowDelay",
+            "default_value": "400",
+            "recommended_value": "0",
+            "category": "System",
+            "subcategory": "Desktop",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": "400",
+                    "description": "Default delay"
+                },
+                {
+                    "value": "0",
+                    "description": "No delay (faster menu response)"
+                }
+            ]
+        },
+        {
+            "id": "win.system.responsiveness",
+            "name": "System Responsiveness",
+            "description": "Controls system responsiveness allocation value (lower means more resources for foreground tasks)",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile",
+            "registry_value_name": "SystemResponsiveness",
+            "default_value": 20,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Performance",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 20,
+                    "description": "Default (balanced)"
+                },
+                {
+                    "value": 0,
+                    "description": "Maximum responsiveness"
+                }
+            ]
+        },
+        {
+            "id": "win.priority.separation",
+            "name": "Windows Priority Scheduling",
+            "description": "Controls how Windows prioritizes foreground/background applications",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl",
+            "registry_value_name": "Win32PrioritySeparation",
+            "default_value": 2,
+            "recommended_value": 33,
+            "category": "System",
+            "subcategory": "CPU",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 2,
+                    "description": "Default"
+                },
+                {
+                    "value": 33,
+                    "description": "Balanced (21 in hex)"
+                },
+                {
+                    "value": 40,
+                    "description": "Experimental"
+                }
+            ]
+        },
+        {
+            "id": "win.power.fastboot",
+            "name": "Fast Startup",
+            "description": "Controls Fast Startup (Hybrid Boot) feature",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power",
+            "registry_value_name": "HiberBootEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Power",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled"
+                }
+            ]
+        },
+        {
+            "id": "win.sysmain.service",
+            "name": "SysMain Service (Superfetch)",
+            "description": "Controls SysMain service (formerly Superfetch) that prefetches data into memory",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SysMain",
+            "registry_value_name": "Start",
+            "default_value": 2,
+            "recommended_value": 4,
+            "category": "System",
+            "subcategory": "Services",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 2,
+                    "description": "Automatic (default)"
+                },
+                {
+                    "value": 4,
+                    "description": "Disabled (prevents background memory prefetching, reduces disk activity and stutters with SSDs)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.advertising.id",
+            "name": "Advertising ID",
+            "description": "Controls unique advertising ID for personalized ads",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo",
+            "registry_value_name": "Enabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Advertising",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (turns off unique advertising ID)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.tailored.data",
+            "name": "Tailored Experiences with Diagnostic Data",
+            "description": "Controls tailored experiences based on diagnostic data collection",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy",
+            "registry_value_name": "TailoredExperiencesWithDiagnosticDataEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Diagnostics",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (reduces background processing of usage patterns)"
+                }
+            ]
+        },
+        {
+            "id": "win.mouse.acceleration",
+            "name": "Mouse Acceleration",
+            "description": "Controls mouse acceleration (enhances pointing precision)",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Mouse",
+            "registry_value_name": "MouseSpeed",
+            "default_value": "1",
+            "recommended_value": "0",
+            "category": "Input",
+            "subcategory": "Mouse",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": "1",
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": "0",
+                    "description": "Disabled (raw input, better for gaming)"
+                }
+            ]
+        },
+        {
+            "id": "win.mouse.threshold1",
+            "name": "Mouse Acceleration Threshold 1",
+            "description": "Controls first threshold for mouse acceleration",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Mouse",
+            "registry_value_name": "MouseThreshold1",
+            "default_value": "6",
+            "recommended_value": "0",
+            "category": "Input",
+            "subcategory": "Mouse",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": "6",
+                    "description": "Default threshold"
+                },
+                {
+                    "value": "0",
+                    "description": "No threshold (raw input, better for gaming)"
+                }
+            ]
+        },
+        {
+            "id": "win.mouse.threshold2",
+            "name": "Mouse Acceleration Threshold 2",
+            "description": "Controls second threshold for mouse acceleration",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Mouse",
+            "registry_value_name": "MouseThreshold2",
+            "default_value": "10",
+            "recommended_value": "0",
+            "category": "Input",
+            "subcategory": "Mouse",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": "10",
+                    "description": "Default threshold"
+                },
+                {
+                    "value": "0",
+                    "description": "No threshold (raw input, better for gaming)"
+                }
+            ]
+        },
+        {
+            "id": "win.mouse.acceleration.wrapper",
+            "name": "Mouse Acceleration",
+            "description": "Controls mouse acceleration and pointer precision settings for gaming (combines MouseSpeed, MouseThreshold1, and MouseThreshold2)",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Mouse",
+            "registry_value_name": "MouseSpeed",
+            "default_value": false,
+            "recommended_value": false,
+            "category": "Gaming",
+            "subcategory": "Input",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "is_wrapper": true,
+            "wrapped_settings": [
+                {
+                    "registry_value_name": "MouseSpeed",
+                    "enabled_value": "1",
+                    "disabled_value": "0"
+                },
+                {
+                    "registry_value_name": "MouseThreshold1", 
+                    "enabled_value": "6",
+                    "disabled_value": "0"
+                },
+                {
+                    "registry_value_name": "MouseThreshold2",
+                    "enabled_value": "10", 
+                    "disabled_value": "0"
+                }
+            ],
+            "possible_values": [
+                {
+                    "value": false,
+                    "description": "Disabled (Recommended for gaming)"
+                },
+                {
+                    "value": true,
+                    "description": "Enabled (Default Windows behavior)"
+                }
+            ]
+        },
+        {
+            "id": "win.accessibility.stickykeys",
+            "name": "Sticky Keys",
+            "description": "Controls Sticky Keys accessibility feature",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Accessibility\\StickyKeys",
+            "registry_value_name": "Flags",
+            "default_value": 510,
+            "recommended_value": 506,
+            "category": "Accessibility",
+            "subcategory": "Input",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 510,
+                    "description": "Default (enabled)"
+                },
+                {
+                    "value": 506,
+                    "description": "Disabled"
+                }
+            ]
+        },
+        {
+            "id": "win.gamebar.nexus",
+            "name": "Game Bar Nexus",
+            "description": "Controls Game Bar Nexus feature",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\GameBar",
+            "registry_value_name": "UseNexusForGameBarEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Gaming",
+            "subcategory": "Game Bar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled"
+                }
+            ]
+        },
+        {
+            "id": "win.gamebar.gamemode",
+            "name": "Auto Game Mode",
+            "description": "Controls automatic Game Mode activation",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\GameBar",
+            "registry_value_name": "AutoGameModeEnabled",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Gaming",
+            "subcategory": "Game Mode",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (automatically enables Game Mode for games)"
+                }
+            ]
+        },
+        {
+            "id": "win.gamedvr.enabled",
+            "name": "Game DVR",
+            "description": "Controls Game DVR for capturing gameplay",
+            "registry_key": "HKEY_CURRENT_USER\\System\\GameConfigStore",
+            "registry_value_name": "GameDVR_Enabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Gaming",
+            "subcategory": "Game DVR",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (better performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.telemetry.allowtelemetry",
+            "name": "Windows Telemetry",
+            "description": "Controls Windows diagnostic data collection level",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\DataCollection",
+            "registry_value_name": "AllowTelemetry",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Telemetry",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Basic (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Security (minimal data collection)"
+                }
+            ]
+        },
+        {
+            "id": "win.telemetry.cpss",
+            "name": "CPSS Store Telemetry",
+            "description": "Controls telemetry for Connected Packages and Store Services",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CPSS\\Store",
+            "registry_value_name": "AllowTelemetry",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Telemetry",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "send only required"
+                }
+            ]
+        },
+        {
+            "id": "win.device.metadata",
+            "name": "Device Metadata Download",
+            "description": "Controls automatic downloading of device metadata from the internet",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Device Metadata",
+            "registry_value_name": "PreventDeviceMetadataFromNetwork",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Privacy",
+            "subcategory": "Device Data",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Disabled (prevents automatic downloads)"
+                }
+            ]
+        },
+        {
+            "id": "win.remote.assistance",
+            "name": "Remote Assistance",
+            "description": "Controls whether others can provide remote assistance to this computer",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Remote Assistance",
+            "registry_value_name": "fAllowToGetHelp",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Remote Access",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled"
+                }
+            ]
+        },
+        {
+            "id": "win.graphics.hwscheduling",
+            "name": "GPU Hardware Scheduling",
+            "description": "Controls hardware-accelerated GPU scheduling",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers",
+            "registry_value_name": "HwSchMode",
+            "default_value": 1,
+            "recommended_value": 2,
+            "category": "Gaming",
+            "subcategory": "Graphics",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Default"
+                },
+                {
+                    "value": 2,
+                    "description": "Enabled (improved GPU performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.transparency",
+            "name": "Transparency Effects",
+            "description": "Controls transparency effects in Windows UI elements",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            "registry_value_name": "EnableTransparency",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Windows UI",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (better performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.update.deliveryoptimization",
+            "name": "Delivery Optimization",
+            "description": "Allow downloads from other devices on the local network and internet",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\DeliveryOptimization\\Config",
+            "registry_value_name": "DODownloadMode",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Updates",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (download only from Microsoft)"
+                }
+            ]
+        },
+        {
+            "id": "win.update.microsoftproducts",
+            "name": "Updates for Other Microsoft Products",
+            "description": "Receive updates for other Microsoft products when updating Windows",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings",
+            "registry_value_name": "AllowMUUpdateService",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "System",
+            "subcategory": "Updates",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (get updates for Office, etc.)"
+                }
+            ]
+        },
+        {
+            "id": "win.update.getuptodate",
+            "name": "Get Me Up to Date",
+            "description": "Controls whether Windows actively checks for and installs updates",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update",
+            "registry_value_name": "AUOptions",
+            "default_value": 4,
+            "recommended_value": 3,
+            "category": "System",
+            "subcategory": "Updates",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 2,
+                    "description": "Notify before download"
+                },
+                {
+                    "value": 3,
+                    "description": "Download and notify before install"
+                },
+                {
+                    "value": 4,
+                    "description": "Automatic download and install (default)"
+                }
+            ]
+        },
+        {
+            "id": "win.explorer.hidefileext",
+            "name": "Hide File Extensions",
+            "description": "Controls whether file extensions are hidden in File Explorer",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "HideFileExt",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "File Explorer",
+            "subcategory": "View Options",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Hidden (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Visible (recommended for better file identification)"
+                }
+            ]
+        },
+        {
+            "id": "win.explorer.cloudfiles.quickaccess",
+            "name": "Cloud Files in Quick Access",
+            "description": "Controls whether cloud files are shown in Quick Access",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
+            "registry_value_name": "ShowCloudFilesInQuickAccess",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "File Explorer",
+            "subcategory": "Quick Access",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (cleaner Quick Access)"
+                }
+            ]
+        },
+        {
+            "id": "win.search.devicehistory",
+            "name": "Device Search History",
+            "description": "Controls whether device search history is enabled",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\SearchSettings",
+            "registry_value_name": "IsDeviceSearchHistoryEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Search",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.explorer.fullpath.titlebar",
+            "name": "Display Full Path in Title Bar",
+            "description": "Shows complete file path in File Explorer title bar",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CabinetState",
+            "registry_value_name": "FullPath",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "File Explorer",
+            "subcategory": "Display",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (shows full path for better navigation)"
+                }
+            ]
+        },
+        {
+            "id": "win.sharing.wizard",
+            "name": "Sharing Wizard",
+            "description": "Controls the sharing wizard for network file sharing",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "SharingWizardOn",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "File Explorer",
+            "subcategory": "Network",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (advanced sharing options)"
+                }
+            ]
+        },
+        {
+            "id": "win.explorer.network.namespace",
+            "name": "Network in Navigation Pane",
+            "description": "Controls whether Network appears in File Explorer navigation pane",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}",
+            "registry_value_name": "System.IsPinnedToNameSpaceTree",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "File Explorer",
+            "subcategory": "Navigation",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Visible (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Hidden (cleaner navigation pane)"
+                }
+            ]
+        },
+        {
+            "id": "win.audio.ducking.preference",
+            "name": "Audio Ducking Preference",
+            "description": "Controls how Windows reduces volume of other sounds during communications",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Multimedia\\Audio",
+            "registry_value_name": "UserDuckingPreference",
+            "default_value": 2,
+            "recommended_value": 3,
+            "category": "Audio",
+            "subcategory": "Communications",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Mute all other sounds"
+                },
+                {
+                    "value": 1,
+                    "description": "Reduce volume by 80%"
+                },
+                {
+                    "value": 2,
+                    "description": "Reduce volume by 50% (default)"
+                },
+                {
+                    "value": 3,
+                    "description": "Do nothing (no ducking)"
+                }
+            ]
+        },
+        {
+            "id": "win.notifications.account",
+            "name": "Account Notifications",
+            "description": "Controls account-related notifications from Windows",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\SystemSettings\\AccountNotifications",
+            "registry_value_name": "EnableAccountNotifications",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Notifications",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (fewer distractions)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.location.global",
+            "name": "Global Location Access",
+            "description": "Controls global location access for all applications",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location",
+            "registry_value_name": "Value",
+            "default_value": "Allow",
+            "recommended_value": "Deny",
+            "category": "Privacy",
+            "subcategory": "Location",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": "Allow",
+                    "description": "Allow location access (default)"
+                },
+                {
+                    "value": "Deny",
+                    "description": "Deny location access (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.location.override",
+            "name": "User Location Override Privacy",
+            "description": "Controls user location override privacy setting",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\CPSS\\Store\\UserLocationOverridePrivacySetting",
+            "registry_value_name": "Value",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Location",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.voice.activation",
+            "name": "Voice Activation",
+            "description": "Controls voice activation for all applications",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Speech_OneCore\\Settings\\VoiceActivation\\UserPreferenceForAllApps",
+            "registry_value_name": "AgentActivationEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Voice",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.voice.activation.lastused",
+            "name": "Voice Activation Last Used",
+            "description": "Controls voice activation last used tracking",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Speech_OneCore\\Settings\\VoiceActivation\\UserPreferenceForAllApps",
+            "registry_value_name": "AgentActivationLastUsed",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Voice",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.notifications.listener",
+            "name": "User Notification Listener",
+            "description": "Controls access to user notifications by applications",
+            "registry_key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\userNotificationListener",
+            "registry_value_name": "Value",
+            "default_value": "Allow",
+            "recommended_value": "Deny",
+            "category": "Privacy",
+            "subcategory": "Notifications",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": "Allow",
+                    "description": "Allow notification access (default)"
+                },
+                {
+                    "value": "Deny",
+                    "description": "Deny notification access (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.language.list",
+            "name": "Website Language List Access",
+            "description": "Controls whether websites can access your language list for localization",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\International\\User Profile",
+            "registry_value_name": "HttpAcceptLanguageOptOut",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Privacy",
+            "subcategory": "Language",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Allow language list access (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Block language list access (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.mfu.tracking.machine",
+            "name": "Most Frequently Used Tracking (Machine)",
+            "description": "Controls tracking of most frequently used apps for Start and Search (machine policy)",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI",
+            "registry_value_name": "DisableMFUTracking",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Privacy",
+            "subcategory": "Usage Tracking",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Enable tracking (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Disable tracking (enhanced privacy)"
+                }
+            ]
+        },
+        {
+            "id": "win.maps.autoupdate",
+            "name": "Maps Auto Update",
+            "description": "Controls automatic updating of offline maps",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SYSTEM\\Maps",
+            "registry_value_name": "AutoUpdateEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Privacy",
+            "subcategory": "Maps",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (saves bandwidth)"
+                }
+            ]
+        },
+        {
+            "id": "win.apps.automatic.archiving",
+            "name": "Automatic App Archiving",
+            "description": "Controls automatic archiving of unused applications",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\Appx",
+            "registry_value_name": "AllowAutomaticAppArchiving",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Apps",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (keeps apps fully available)"
+                }
+            ]
+        },
+        {
+            "id": "win.theme.dark.wrapper",
+            "name": "Dark Theme",
+            "description": "Controls dark theme for apps and system UI (combines AppsUseLightTheme for user and machine, and SystemUsesLightTheme)",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            "registry_value_name": "AppsUseLightTheme",
+            "default_value": false,
+            "recommended_value": true,
+            "category": "Visual Effects",
+            "subcategory": "Theme",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "is_wrapper": true,
+            "wrapped_settings": [
+                {
+                    "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                    "registry_value_name": "AppsUseLightTheme",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                },
+                {
+                    "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                    "registry_value_name": "SystemUsesLightTheme",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                },
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                    "registry_value_name": "AppsUseLightTheme",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                }
+            ],
+            "possible_values": [
+                {
+                    "value": true,
+                    "description": "Dark theme (easier on eyes)"
+                },
+                {
+                    "value": false,
+                    "description": "Light theme (default)"
+                }
+            ]
+        },
+        {
+            "id": "win.gaming.tasks.priority",
+            "name": "Gaming Tasks Priority",
+            "description": "Controls the priority level for gaming tasks in Windows multimedia system profile",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games",
+            "registry_value_name": "Priority",
+            "default_value": 2,
+            "recommended_value": 6,
+            "category": "Gaming",
+            "subcategory": "Performance",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 2,
+                    "description": "Default priority"
+                },
+                {
+                    "value": 6,
+                    "description": "High priority (better gaming performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.gaming.tasks.gpu.priority",
+            "name": "Gaming Tasks GPU Priority",
+            "description": "Controls the GPU priority level for gaming tasks in Windows multimedia system profile",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games",
+            "registry_value_name": "GPU Priority",
+            "default_value": 8,
+            "recommended_value": 8,
+            "category": "Gaming",
+            "subcategory": "Performance",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 8,
+                    "description": "High GPU priority (default and recommended)"
+                }
+            ]
+        },
+        {
+            "id": "win.gaming.tasks.scheduling.category",
+            "name": "Gaming Tasks Scheduling Category",
+            "description": "Controls the scheduling category for gaming tasks in Windows multimedia system profile",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games",
+            "registry_value_name": "Scheduling Category",
+            "default_value": "Medium",
+            "recommended_value": "High",
+            "category": "Gaming",
+            "subcategory": "Performance",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": "Medium",
+                    "description": "Default scheduling category"
+                },
+                {
+                    "value": "High",
+                    "description": "High priority scheduling (better gaming performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.gaming.tasks.sfio.priority",
+            "name": "Gaming Tasks SFIO Priority",
+            "description": "Controls the SFIO (Sequential File I/O) priority for gaming tasks in Windows multimedia system profile",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games",
+            "registry_value_name": "SFIO Priority",
+            "default_value": "Normal",
+            "recommended_value": "High",
+            "category": "Gaming",
+            "subcategory": "Performance",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": "Normal",
+                    "description": "Default SFIO priority"
+                },
+                {
+                    "value": "High",
+                    "description": "High SFIO priority (better gaming performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.copilot.disable.wrapper",
+            "name": "Windows Copilot",
+            "description": "Controls Windows Copilot feature for both user and system-wide (combines user and machine policies)",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+            "registry_value_name": "TurnOffWindowsCopilot",
+            "default_value": false,
+            "recommended_value": true,
+            "category": "System",
+            "subcategory": "Copilot",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "is_wrapper": true,
+            "wrapped_settings": [
+                {
+                    "registry_key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+                    "registry_value_name": "TurnOffWindowsCopilot",
+                    "enabled_value": 1,
+                    "disabled_value": 0
+                },
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+                    "registry_value_name": "TurnOffWindowsCopilot",
+                    "enabled_value": 1,
+                    "disabled_value": 0
+                }
+            ],
+            "possible_values": [
+                {
+                    "value": true,
+                    "description": "Disabled (removes Copilot integration)"
+                },
+                {
+                    "value": false,
+                    "description": "Enabled (default)"
+                }
+            ]
+        },
+        {
+            "id": "win.edge.performance.wrapper",
+            "name": "Microsoft Edge Optimization",
+            "description": "Optimizes Microsoft Edge for better system performance (combines startup boost, hardware acceleration, and background mode)",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+            "registry_value_name": "StartupBoostEnabled",
+            "default_value": false,
+            "recommended_value": true,
+            "category": "System",
+            "subcategory": "Edge",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "is_wrapper": true,
+            "wrapped_settings": [
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+                    "registry_value_name": "StartupBoostEnabled",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                },
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+                    "registry_value_name": "HardwareAccelerationModeEnabled",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                },
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+                    "registry_value_name": "BackgroundModeEnabled",
+                    "enabled_value": 0,
+                    "disabled_value": 1
+                }
+            ],
+            "possible_values": [
+                {
+                    "value": true,
+                    "description": "Optimized (reduced resource usage)"
+                },
+                {
+                    "value": false,
+                    "description": "Default (full features enabled)"
+                }
+            ]
+        },
+        {
+            "id": "win.privacy.tracking.disable.wrapper",
+            "name": "Usage Tracking",
+            "description": "Controls tracking of most frequently used apps for Start and Search (combines user and machine policies)",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\EdgeUI",
+            "registry_value_name": "DisableMFUTracking",
+            "default_value": false,
+            "recommended_value": true,
+            "category": "Privacy",
+            "subcategory": "Usage Tracking",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "is_wrapper": true,
+            "wrapped_settings": [
+                {
+                    "registry_key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\EdgeUI",
+                    "registry_value_name": "DisableMFUTracking",
+                    "enabled_value": 1,
+                    "disabled_value": 0
+                },
+                {
+                    "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\EdgeUI",
+                    "registry_value_name": "DisableMFUTracking",
+                    "enabled_value": 1,
+                    "disabled_value": 0
+                }
+            ],
+            "possible_values": [
+                {
+                    "value": true,
+                    "description": "Disabled (enhanced privacy)"
+                },
+                {
+                    "value": false,
+                    "description": "Enabled (default)"
+                }
+            ]
+        },
+        {
+            "id": "win.taskbar.chat",
+            "name": "Taskbar Chat",
+            "description": "Controls the Chat (Meet Now) button on the taskbar",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "TaskbarMn",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Taskbar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Visible (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Hidden (cleaner taskbar)"
+                }
+            ]
+        },
+        {
+            "id": "win.taskbar.taskview",
+            "name": "Taskbar Task View",
+            "description": "Controls the Task View button on the taskbar",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "ShowTaskViewButton",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Taskbar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Visible (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Hidden (cleaner taskbar)"
+                }
+            ]
+        },
+        {
+            "id": "win.taskbar.copilot",
+            "name": "Taskbar Copilot",
+            "description": "Controls the Copilot button on the taskbar",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "ShowCopilotButton",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Taskbar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Visible (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Hidden (cleaner taskbar)"
+                }
+            ]
+        },
+        {
+            "id": "win.taskbar.meetnow",
+            "name": "Meet Now",
+            "description": "Controls the Meet Now feature in the taskbar",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+            "registry_value_name": "HideSCAMeetNow",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Visual Effects",
+            "subcategory": "Taskbar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Visible (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Hidden (cleaner taskbar)"
+                }
+            ]
+        },
+        {
+            "id": "win.taskbar.newsinterests",
+            "name": "News and Interests",
+            "description": "Controls the News and Interests widget on the taskbar",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Feeds",
+            "registry_value_name": "EnableFeeds",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Taskbar",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (cleaner taskbar)"
+                }
+            ]
+        },
+        {
+            "id": "win.start.recommendations",
+            "name": "Start Menu Recommendations",
+            "description": "Controls recommendations for tips, shortcuts, new apps and more in Start Menu",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "registry_value_name": "Start_IrisRecommendations",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Visual Effects",
+            "subcategory": "Start Menu",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (cleaner Start Menu)"
+                }
+            ]
+        },
+        {
+            "id": "win.display.dpi.logpixels",
+            "name": "DPI Log Pixels",
+            "description": "Controls the base DPI scaling value for the display",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "LogPixels",
+            "default_value": 96,
+            "recommended_value": 96,
+            "category": "System",
+            "subcategory": "Display",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 96,
+                    "description": "100% scaling (96 DPI)"
+                },
+                {
+                    "value": 120,
+                    "description": "125% scaling (120 DPI)"
+                },
+                {
+                    "value": 144,
+                    "description": "150% scaling (144 DPI)"
+                }
+            ]
+        },
+        {
+            "id": "win.display.dpi.win8scaling",
+            "name": "Windows 8 DPI Scaling",
+            "description": "Controls Windows 8 style DPI scaling behavior",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "Win8DpiScaling",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "System",
+            "subcategory": "Display",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (alternative scaling method)"
+                }
+            ]
+        },
+        {
+            "id": "win.display.dwm.dpiscaling",
+            "name": "DWM DPI Scaling",
+            "description": "Controls DPI scaling behavior in Desktop Window Manager",
+            "registry_key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\DWM",
+            "registry_value_name": "UseDpiScaling",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Display",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (may improve app compatibility)"
+                }
+            ]
+        },
+        {
+            "id": "win.display.dpi.perprocess",
+            "name": "Per Process System DPI",
+            "description": "Controls per-process system DPI scaling for application compatibility",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "EnablePerProcessSystemDPI",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Display",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (may improve scaling consistency)"
+                }
+            ]
+        },
+        {
+            "id": "win.store.autodownload",
+            "name": "Store Auto Download",
+            "description": "Controls automatic downloading of app updates from Microsoft Store",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\WindowsStore",
+            "registry_value_name": "AutoDownload",
+            "default_value": 4,
+            "recommended_value": 2,
+            "category": "System",
+            "subcategory": "Store",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 2,
+                    "description": "Never auto-download (user control)"
+                },
+                {
+                    "value": 4,
+                    "description": "Auto-download (default)"
+                }
+            ]
+        },
+        {
+            "id": "win.edge.background.mode",
+            "name": "Edge Background Mode",
+            "description": "Controls whether Microsoft Edge runs in background",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+            "registry_value_name": "BackgroundModeEnabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "System",
+            "subcategory": "Edge",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "possible_values": [
+                {
+                    "value": 1,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 0,
+                    "description": "Disabled (reduces background resource usage)"
+                }
+            ]
+        },
+        {
+            "id": "win.apps.background.execution",
+            "name": "Apps Background Execution",
+            "description": "Controls whether apps can run in the background",
+            "registry_key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy",
+            "registry_value_name": "LetAppsRunInBackground",
+            "default_value": 0,
+            "recommended_value": 2,
+            "category": "Privacy",
+            "subcategory": "Apps",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 2,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "User decides (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Force allow"
+                },
+                {
+                    "value": 2,
+                    "description": "Force deny (better performance)"
+                }
+            ]
+        },
+        {
+            "id": "win.search.web.startmenu",
+            "name": "Web Search in Start Menu",
+            "description": "Controls web search suggestions in Start Menu search",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\Explorer",
+            "registry_value_name": "DisableSearchBoxSuggestions",
+            "default_value": 0,
+            "recommended_value": 1,
+            "category": "Privacy",
+            "subcategory": "Search",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Enabled (default)"
+                },
+                {
+                    "value": 1,
+                    "description": "Disabled (local search only)"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.master.control",
+            "name": "Desktop Background Mode",
+            "description": "Easy control for desktop background - automatically configures multiple wallpaper settings",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers",
+            "registry_value_name": "BackgroundType",
+            "default_value": 0,
+            "recommended_value": 0,
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Use Current Picture"
+                },
+                {
+                    "value": 1,
+                    "description": "Solid Black Background"
+                },
+                {
+                    "value": 2,
+                    "description": "Windows Spotlight"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.background.type",
+            "name": "Background Type (Advanced)",
+            "description": "Controls the type of desktop background (Picture, Solid Color, Slideshow, or Windows Spotlight) - Use Desktop Background Mode for easier control",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Wallpapers",
+            "registry_value_name": "BackgroundType",
+            "default_value": 0,
+            "recommended_value": 0,
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Picture"
+                },
+                {
+                    "value": 1,
+                    "description": "Solid Color"
+                },
+                {
+                    "value": 2,
+                    "description": "Slideshow"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.spotlight.enabled",
+            "name": "Desktop Spotlight (Experimental)",
+            "description": "Controls whether Windows Spotlight is enabled for desktop backgrounds - WARNING: This registry key may not exist in Windows 11",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\DesktopSpotlight\\Settings",
+            "registry_value_name": "EnabledState",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "dont_edit": true,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (for Picture, Solid Color, or Slideshow)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (for Windows Spotlight)"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.spotlight.content",
+            "name": "Spotlight Content Delivery (Advanced)",
+            "description": "Controls Windows Spotlight content delivery for desktop backgrounds - Use Desktop Background Mode for easier control",
+            "registry_key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager",
+            "registry_value_name": "SubscribedContent-338389Enabled",
+            "default_value": 1,
+            "recommended_value": 0,
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": 0,
+                    "description": "Disabled (no Spotlight content)"
+                },
+                {
+                    "value": 1,
+                    "description": "Enabled (allows Spotlight content)"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.style",
+            "name": "Wallpaper Display Style",
+            "description": "Controls how wallpaper images are displayed (Fill, Fit, Stretch, Tile, Center, Span)",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "WallpaperStyle",
+            "default_value": "10",
+            "recommended_value": "10",
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": false,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": "0",
+                    "description": "Center"
+                },
+                {
+                    "value": "2",
+                    "description": "Stretch"
+                },
+                {
+                    "value": "6",
+                    "description": "Fit"
+                },
+                {
+                    "value": "10",
+                    "description": "Fill (default)"
+                },
+                {
+                    "value": "22",
+                    "description": "Span"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.tile",
+            "name": "Wallpaper Tiling",
+            "description": "Controls whether wallpaper is tiled when using Center style",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "TileWallpaper",
+            "default_value": "0",
+            "recommended_value": "0",
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 1,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": "0",
+                    "description": "No Tiling (default)"
+                },
+                {
+                    "value": "1",
+                    "description": "Tile (repeat image)"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.path",
+            "name": "Wallpaper Image Path",
+            "description": "Specifies the full path to the wallpaper image file (only applies when Background Type is Picture) - READ ONLY for safety",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Desktop",
+            "registry_value_name": "Wallpaper",
+            "default_value": "",
+            "recommended_value": "",
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": false,
+            "level": 2,
+            "dont_edit": true,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": "",
+                    "description": "No wallpaper (for solid color)"
+                }
+            ]
+        },
+        {
+            "id": "win.wallpaper.background.color",
+            "name": "Desktop Background Color (Advanced)",
+            "description": "Sets the RGB color for solid color backgrounds (format: 'R G B' e.g., '0 0 0' for black) - Use Desktop Background Mode for easier control",
+            "registry_key": "HKEY_CURRENT_USER\\Control Panel\\Colors",
+            "registry_value_name": "Background",
+            "default_value": "0 78 158",
+            "recommended_value": "0 0 0",
+            "category": "Appearance",
+            "subcategory": "Wallpaper",
+            "is_advanced": true,
+            "type": "registry",
+            "creation_allowed": true,
+            "level": 0,
+            "requires_system_refresh": true,
+            "possible_values": [
+                {
+                    "value": "0 0 0",
+                    "description": "Black"
+                },
+                {
+                    "value": "255 255 255",
+                    "description": "White"
+                },
+                {
+                    "value": "0 78 158",
+                    "description": "Windows Blue (default)"
+                },
+                {
+                    "value": "64 64 64",
+                    "description": "Dark Gray"
+                },
+                {
+                    "value": "128 128 128",
+                    "description": "Medium Gray"
+                }
+            ]
+        }
+    ]
+}

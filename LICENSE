@@ -1,0 +1,64 @@
+Checkmark Source-Available License (Non-Commercial)
+
+Last updated: 2025-09-14
+Licensor: Metric Software OY
+
+1. Definitions
+
+1.1 "Software" means the Checkmark Windows application source code in this repository, including associated build scripts and documentation, but excluding third-party components and dependencies.
+
+1.2 "You" means any individual or legal entity that receives a copy of the Software.
+
+2. Grant of Rights
+
+Subject to the conditions below, Licensor grants You a limited, non-exclusive, revocable, non-transferable license to:
+
+2.1 Use, copy, and modify the Software.
+
+2.2 Build the Software from source and run the resulting binaries.
+
+2.3 Redistribute your own builds and/or modified versions of the Software, in source and/or binary form, for non-commercial purposes only.
+
+3. Conditions and Restrictions
+
+Your rights under this License are subject to all of the following:
+
+3.1 Attribution and notices. You must retain all copyright, attribution, and license notices from the original Software in any copies, forks, or redistributions, in both source and binary form.
+
+3.2 Marking modifications. If you modify the Software, you must clearly indicate in a reasonable manner that your version is modified and that it is not an official build by Metric Software OY.
+
+3.3 No endorsement. You may not state or imply that Licensor endorses your version, your organization, or your use, without Licensor’s prior written permission.
+
+3.4 No scams or illegal use. You may not use or distribute the Software in connection with fraud, scams, malware, harassment, or any illegal activity under applicable law.
+
+3.5 Non-commercial only. You may not sell the Software, charge for access to it, include it in a paid product or service, or otherwise use it for profit, unless you have a separate written agreement with Licensor that permits such use.
+
+3.6 Trademarks. This License does not grant any rights to use Licensor’s trademarks, logos, or brand names except for fair and descriptive use (for example, “fork of Checkmark”).
+
+4. Termination and Revocation
+
+4.1 Automatic termination. This License automatically terminates for You if you materially breach any of its terms (including the non-commercial, anti-scam, and attribution requirements) and fail to cure that breach within fourteen (14) days after notice from Licensor, or immediately in cases of intentional or severe misuse such as scams, malware distribution, or clear bad faith.
+
+4.2 Licensor’s right to intervene. Licensor may, in its reasonable discretion, revoke or limit Your rights under this License with respect to future use or redistribution if Licensor determines that Your use or distribution of the Software:
+  (a) is misleading users into believing your build is an official Metric Software OY release;
+  (b) is likely to harm Licensor’s reputation or users; or
+  (c) otherwise poses a material risk of legal, security, or privacy issues.
+
+4.3 Effect of termination. Upon termination or revocation, You must stop using and distributing the Software and any derivative works. Past distributions made while you were in compliance with this License remain subject to these terms, but no new distributions or uses are permitted.
+
+5. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT, TO THE MAXIMUM EXTENT PERMITTED BY LAW.
+
+6. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL METRIC SOFTWARE OY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR USE, ARISING OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THIS LICENSE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+7. Third-Party Software
+
+The Software depends on third-party components (such as Qt and vcpkg packages), which are licensed under their own terms. Those components are not covered by this License. You are responsible for complying with all applicable third-party licenses when building or distributing the Software or your modifications.
+
+8. Governing Law
+
+This License is governed by and construed in accordance with the laws of Finland, without regard to conflict-of-law rules. Any disputes arising out of or relating to this License shall be subject to the exclusive jurisdiction of the courts of Finland.
+
