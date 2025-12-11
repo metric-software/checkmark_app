@@ -19,29 +19,41 @@ UpdateManager& UpdateManager::getInstance() {
     return *s_instance;
 }
 
-UpdateManager::UpdateManager(QObject* parent) 
-    : QObject(parent), 
+namespace {
+// Production appcast feed hosted on Cloudflare R2
+constexpr auto kDefaultAppcastUrl = "https://downloads.checkmark.gg/appcast.xml";
+
+bool isProductionHost(const QString& host) {
+    const QString trimmed = host.trimmed().toLower();
+    return trimmed == QLatin1String("checkmark.gg") ||
+           trimmed == QLatin1String("www.checkmark.gg") ||
+           trimmed == QLatin1String("downloads.checkmark.gg");
+}
+}
+
+UpdateManager::UpdateManager(QObject* parent)
+    : QObject(parent),
       m_checkTimer(new QTimer(this)),
       m_networkManager(new QNetworkAccessManager(this)) {
-    
+
     m_checkTimer->setSingleShot(false);
     m_checkTimer->setInterval(3600000); // Check every hour
     connect(m_checkTimer, &QTimer::timeout, this, &UpdateManager::onUpdateCheck);
-    
+
     // Set default values
     m_currentVersion = CHECKMARK_VERSION_STRING;
-    // Prefer server base URL from NetworkConfig and append the canonical appcast path
+    // Use the production appcast by default; allow overrides for non-prod bases.
     const QString baseUrl = NetworkConfig::instance().getBaseUrl();
-    if (!baseUrl.isEmpty()) {
-        // Ensure HTTPS for appcast
-        QUrl bu(baseUrl);
+    const QUrl bu(baseUrl);
+    const QString host = bu.host();
+    if (!host.isEmpty() && !isProductionHost(host)) {
         QString scheme = bu.scheme().trimmed().toLower();
         if (scheme.isEmpty() || scheme == QLatin1String("http")) scheme = QStringLiteral("https");
         QString url = QString("%1://%2").arg(scheme, bu.host());
         if (bu.port() != -1) url += ":" + QString::number(bu.port());
         m_appcastUrl = url + "/appcast.xml";
     } else {
-        m_appcastUrl = "https://checkmark.gg/appcast.xml";
+        m_appcastUrl = QString::fromUtf8(kDefaultAppcastUrl);
     }
 }
 

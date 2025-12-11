@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   WinSparkle appcast feed for the Windows client.
-  Host this file at: https://checkmark.gg/appcast.xml (HTTPS required)
+  Host this file at: https://downloads.checkmark.gg/appcast.xml (HTTPS required)
 
   Notes:
   - "sparkle:version" is used by WinSparkle to compare versions.
