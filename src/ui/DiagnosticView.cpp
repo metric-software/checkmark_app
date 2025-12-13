@@ -2,6 +2,8 @@
 
 #include <algorithm>  // For std::max
 #include <iostream>
+#include <memory>
+#include <vector>
 #include "../logging/Logger.h"
 
 #include <QApplication>  // Add this include for QApplication::processEvents()
@@ -13,6 +15,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QPainter>
+#include <QSignalBlocker>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QStyledItemDelegate>
@@ -24,7 +27,6 @@
 
 #include "../ApplicationSettings.h"  // Add this include for ApplicationSettings
 #include "CustomWidgetWithTitle.h"
-#include "DiagnosticUploadDialog.h"  // Add the include for our new dialog
 #include "SettingsDropdown.h"
 #include "diagnostic/DiagnosticDataStore.h"
 #include "diagnostic/background_process_worker.h"
@@ -40,6 +42,7 @@
 
 DiagnosticView::DiagnosticView(QWidget* parent)
     : QWidget(parent) {
+  LOG_INFO << "[startup] DiagnosticView: ctor begin";
   worker = new DiagnosticWorker(this);
 
   // Connect to MenuManager for comparison data (centralized menu management)
@@ -62,7 +65,9 @@ DiagnosticView::DiagnosticView(QWidget* parent)
     // Continue without comparison data - UI will work without it
   });
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout begin";
   setupLayout();
+  LOG_INFO << "[startup] DiagnosticView: setupLayout end";
 
   // Connect run button
   connect(runButton, &QPushButton::clicked, this,
@@ -108,6 +113,8 @@ DiagnosticView::DiagnosticView(QWidget* parent)
   connect(experimentalFeaturesTimer, &QTimer::timeout, this,
           &DiagnosticView::updateExperimentalFeaturesVisibility);
   experimentalFeaturesTimer->start(1000);  // Check every second
+
+  LOG_INFO << "[startup] DiagnosticView: ctor end";
 }
 
 DiagnosticView::~DiagnosticView() {
@@ -252,6 +259,7 @@ QString DiagnosticView::formatResultValue(const QString& label,
 
 // Replace checkbox setup with combo box setup in setupLayout()
 void DiagnosticView::setupLayout() {
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating base layouts";
   // Create main layout
   mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -293,6 +301,7 @@ void DiagnosticView::setupLayout() {
   scrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: initializing labels/widgets";
   // Initialize all labels and widgets
   cpuInfoLabel = new QLabel(this);
   cpuPerfLabel = new QLabel(this);
@@ -303,6 +312,7 @@ void DiagnosticView::setupLayout() {
   gpuPerfLabel = new QLabel(this);
   systemInfoLabel = new QLabel(this);
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating section widgets";
   // Replace QGroupBox widgets with CustomWidgetWithTitle
   cpuWidget = new CustomWidgetWithTitle("CPU", this);
   cpuWidget->getContentLayout()->addWidget(cpuInfoLabel);
@@ -326,16 +336,24 @@ void DiagnosticView::setupLayout() {
   QVBoxLayout* driveContentLayout = driveWidget->getContentLayout();
 
   // Initialize drive labels vectors using ConstantSystemInfo
-  const auto& constantInfo = SystemMetrics::GetConstantSystemInfo();
-  for (size_t i = 0; i < constantInfo.drives.size(); i++) {
-    QLabel* infoLabel = new QLabel(this);
-    QLabel* perfLabel = new QLabel(this);
+  try {
+    LOG_INFO << "[startup] DiagnosticView: setupLayout: reading constant drive info";
+    const auto& constantInfo = SystemMetrics::GetConstantSystemInfo();
+    LOG_INFO << "[startup] DiagnosticView: setupLayout: drive count=" << constantInfo.drives.size();
+    for (size_t i = 0; i < constantInfo.drives.size(); i++) {
+      QLabel* infoLabel = new QLabel(this);
+      QLabel* perfLabel = new QLabel(this);
 
-    driveInfoLabels.append(infoLabel);
-    drivePerfLabels.append(perfLabel);
+      driveInfoLabels.append(infoLabel);
+      drivePerfLabels.append(perfLabel);
 
-    driveContentLayout->addWidget(infoLabel);
-    driveContentLayout->addWidget(perfLabel);
+      driveContentLayout->addWidget(infoLabel);
+      driveContentLayout->addWidget(perfLabel);
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR << "[startup] DiagnosticView: setupLayout: exception while creating drive labels: " << e.what();
+  } catch (...) {
+    LOG_ERROR << "[startup] DiagnosticView: setupLayout: unknown exception while creating drive labels";
   }
 
   // Initialize dev tools group
@@ -374,6 +392,7 @@ void DiagnosticView::setupLayout() {
   backgroundProcessWidget->getContentLayout()->addWidget(
     backgroundProcessLabel);
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating summary and additional sections";
   // Add Analysis Summary widget at the top
   summaryWidget = new CustomWidgetWithTitle("Analysis Summary", this);
   QLabel* placeholderLabel =
@@ -400,6 +419,7 @@ void DiagnosticView::setupLayout() {
   scrollLayout->setSpacing(20);
   scrollLayout->addStretch();
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: configuring scroll area";
   // Configure scroll area
   scrollContent->setLayout(scrollLayout);
   scrollArea->setWidget(scrollContent);
@@ -410,6 +430,7 @@ void DiagnosticView::setupLayout() {
   // Add scroll area to main layout
   mainLayout->addWidget(scrollArea);
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: building control panel";
   // Remove the status panel and integrate status label into control panel
   // Bottom controls with button and progress bar
   QWidget* controlPanel = new QWidget(this);
@@ -425,6 +446,7 @@ void DiagnosticView::setupLayout() {
   controlPanelLayout->setContentsMargins(10, 10, 10, 10);
   controlPanelLayout->setSpacing(4);  // Reduced spacing
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating dropdowns";
   // Create combo boxes with full descriptive text options
   driveTestModeCombo = new SettingsDropdown(this);
   driveTestModeCombo->addItem("Skip Drive Tests", DriveTest_None);
@@ -446,6 +468,7 @@ void DiagnosticView::setupLayout() {
                                       CpuThrottle_Extended);
   cpuThrottlingTestModeCombo->setDefaultIndex(0);  // Default to Disabled
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating checkboxes";
   // Keep these as checkboxes
   runGpuTestsCheckbox = new QCheckBox("GPU Tests", this);
   runCpuBoostTestsCheckbox = new QCheckBox("CPU Boost Tests", this);
@@ -468,6 +491,7 @@ void DiagnosticView::setupLayout() {
   runMemoryTestsCheckbox->setChecked(true);    // On by default
   runBackgroundTestsCheckbox->setChecked(true); // On by default
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: styling checkboxes";
   // Apply slightly more compact checkbox style
   QString checkboxStyle = R"(
         QCheckBox {
@@ -552,6 +576,7 @@ void DiagnosticView::setupLayout() {
   // Add the grid layout to the control panel
   controlPanelLayout->addLayout(testControlsGrid);
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: connecting dropdowns";
   // Connect signals from combo boxes
   connect(driveTestModeCombo, &SettingsDropdown::valueChanged,
           [this](const QVariant& value) { 
@@ -571,6 +596,7 @@ void DiagnosticView::setupLayout() {
             updateRunButtonState(); 
           });
 
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: connecting checkboxes";
   // Connect checkbox signals
   connect(runGpuTestsCheckbox, &QCheckBox::toggled, this,
           &DiagnosticView::setRunGpuTests);
@@ -607,9 +633,6 @@ void DiagnosticView::setupLayout() {
   connect(useRecommendedCheckbox, &QCheckBox::toggled, this,
           &DiagnosticView::setUseRecommendedSettings);
 
-  // Initially apply recommended settings
-  setUseRecommendedSettings(true);
-
   // Controls layout with run button and progress bar
   QHBoxLayout* controlsLayout = new QHBoxLayout();
   controlsLayout->setSpacing(6);  // Reduced spacing
@@ -630,28 +653,7 @@ void DiagnosticView::setupLayout() {
   controlsLayout->addWidget(runButton);
   controlsLayout->addWidget(diagnosticProgress, 1);
 
-  // Add Upload Results button
-  QPushButton* uploadResultsButton = new QPushButton("Upload Results", this);
-  uploadResultsButton->setStyleSheet(R"(
-        QPushButton {
-            background-color: #333333;
-            color: white;
-            border: none;
-            padding: 6px 16px;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        QPushButton:hover { background-color: #404040; }
-        QPushButton:pressed { background-color: #292929; }
-    )");
-  uploadResultsButton->setFixedHeight(progressBarHeight);
-  connect(uploadResultsButton, &QPushButton::clicked, this,
-          &DiagnosticView::onUploadResults);
-
-  // Add it to the layout next to the Run Diagnostics button
-  // This should be added to the controlsLayout
-  controlsLayout->addWidget(uploadResultsButton);
-
+  LOG_INFO << "[startup] DiagnosticView: setupLayout: creating status label";
   // Add status label below in a separate row
   statusLabel = new QLabel("Ready to start diagnostics...", controlPanel);
   statusLabel->setStyleSheet(
@@ -664,6 +666,25 @@ void DiagnosticView::setupLayout() {
   controlPanelLayout->addLayout(controlsLayout);
   controlPanelLayout->addWidget(statusLabel);
 
+  // Apply default/recommended settings after all controls exist to avoid
+  // signal handlers touching null widgets during startup.
+  {
+    std::vector<QObject*> widgetsToBlock = {
+      driveTestModeCombo, networkTestModeCombo, cpuThrottlingTestModeCombo,
+      runGpuTestsCheckbox, runCpuBoostTestsCheckbox, developerToolsCheckbox,
+      storageAnalysisCheckbox, runCpuTestsCheckbox, runMemoryTestsCheckbox,
+      runBackgroundTestsCheckbox, useRecommendedCheckbox};
+    std::vector<std::unique_ptr<QSignalBlocker>> blockers;
+    blockers.reserve(widgetsToBlock.size());
+    for (QObject* obj : widgetsToBlock) {
+      if (obj) {
+        blockers.emplace_back(std::make_unique<QSignalBlocker>(obj));
+      }
+    }
+    setUseRecommendedSettings(true);
+  }
+
+  LOG_INFO << "[startup] DiagnosticView: setupLayout end (post-control panel)";
   mainLayout->addWidget(controlPanel);
 
   // Enable rich text for all info labels
@@ -2544,6 +2565,14 @@ void DiagnosticView::setCpuThrottlingTestMode(int index) {
 }
 
 void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
+  // Some builds may strip optional controls (like manual upload buttons); guard against missing widgets
+  if (!driveTestModeCombo || !networkTestModeCombo || !cpuThrottlingTestModeCombo ||
+      !runGpuTestsCheckbox || !runCpuBoostTestsCheckbox || !developerToolsCheckbox ||
+      !storageAnalysisCheckbox) {
+    LOG_WARN << "DiagnosticView: skipping recommended settings update because one or more controls are missing";
+    return;
+  }
+
   // Apply disabled visual style to dropdowns when in "recommended" mode
   QString enabledDropdownStyle = "";  // Default style from SettingsDropdown
   QString disabledDropdownStyle = R"(
@@ -2759,11 +2788,6 @@ void DiagnosticView::cancelOperations() {
   }
 
   LOG_INFO << "DiagnosticView operations cancelled";
-}
-
-void DiagnosticView::onUploadResults() {
-  DiagnosticUploadDialog dialog(this);
-  dialog.exec();
 }
 
 // Add this new helper method to clear all previous results

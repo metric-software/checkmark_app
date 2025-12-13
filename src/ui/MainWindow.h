@@ -14,6 +14,9 @@
 #include "SettingsView.h"
 #include "SystemInfoView.h"
 #include "SilentNotificationBanner.h"
+class UpdateCenterView;
+enum class UpdateTier;
+struct UpdateStatus;
 class MainWindow : public QMainWindow {
   Q_OBJECT
  public:
@@ -32,13 +35,13 @@ class MainWindow : public QMainWindow {
   void cleanupResources();
 
   // Update manager slots
-  void onUpdateAvailable(const QString& version);
-  void onUpdateNotAvailable();
-  void onUpdateError(const QString& error);
+  void onUpdateStatusChanged(const UpdateStatus& status);
+  void onCriticalUpdateDetected(const UpdateStatus& status);
 
  private:
   void setupLayout();
   void setDefaultSize() { setMinimumSize(0, 0); }
+  void applyUpdateButtonStyle(UpdateTier tier, const QString& versionText);
 
   // Add this method to the private section:
   void closeEvent(QCloseEvent* event) override;
@@ -52,10 +55,12 @@ class MainWindow : public QMainWindow {
   QPushButton* gameBenchmarkButton = nullptr;
   QPushButton* settingsButton = nullptr;
   QPushButton* updateButton = nullptr;
+  UpdateCenterView* updateView = nullptr;
   SystemInfoView* systemInfoView = nullptr;
   DiagnosticView* diagnosticView = nullptr;
   OptimizeView* optimizeView = nullptr;
   GameBenchmarkView* gameBenchmarkView = nullptr;
   SettingsView* settingsView = nullptr;
   SilentNotificationBanner* notificationBanner = nullptr;
+  bool criticalDialogShown = false;
 };

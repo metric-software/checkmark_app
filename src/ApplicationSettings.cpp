@@ -182,6 +182,15 @@ void ApplicationSettings::setAllowDataCollection(bool enabled) {
   settings.sync();  // Force write to disk immediately
 }
 
+bool ApplicationSettings::isOfflineModeEnabled() const {
+  return settings.value("Network/OfflineModeEnabled", false).toBool();
+}
+
+void ApplicationSettings::setOfflineModeEnabled(bool enabled) {
+  settings.setValue("Network/OfflineModeEnabled", enabled);
+  settings.sync();  // Force write to disk immediately
+}
+
 // Detailed logs methods
 bool ApplicationSettings::getDetailedLogsEnabled() const {
   return settings.value("Features/DetailedLogsEnabled", false).toBool();
@@ -247,16 +256,28 @@ bool ApplicationSettings::getEffectiveExperimentalFeaturesEnabled() const {
 }
 
 bool ApplicationSettings::getEffectiveAutomaticDataUploadEnabled() const {
-  // Developer bypass: ignore remote flags and backend status, but still
-  // respect the local user preference for automatic upload.
-  if (developerBypassEnabled_) {
-    return getAutomaticDataUploadEnabled();
-  }
-
-  // If remote flags have not yet been fetched, treat automatic upload as
-  // disabled until we know the backend status.
-  if (!remoteFlagsInitialized_) {
+  // Offline mode blocks uploads entirely, even for background tasks.
+  if (isOfflineModeEnabled()) {
     return false;
   }
-  return getAutomaticDataUploadEnabled() && remoteUploadAllowed_;
+
+  // Respect the privacy toggle even though uploads are now automatic.
+  if (!getAllowDataCollection()) {
+    return false;
+  }
+
+  const bool automaticPreference = getAutomaticDataUploadEnabled();
+
+  // Developer bypass: ignore remote flags/backend status but still respect
+  // the local automatic upload preference.
+  if (developerBypassEnabled_) {
+    return automaticPreference;
+  }
+
+  // If remote flags have not yet been fetched, fall back to the local
+  // preference so uploads can proceed by default.
+  if (!remoteFlagsInitialized_) {
+    return automaticPreference;
+  }
+  return automaticPreference && remoteUploadAllowed_;
 }

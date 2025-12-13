@@ -1,4 +1,4 @@
-#include "ui/GameBenchmarkView.h"
+﻿#include "ui/GameBenchmarkView.h"
 
 #include <iostream>
 #include <fstream>
@@ -30,7 +30,6 @@
 #include "benchmark/BenchmarkStateTracker.h"
 #include "benchmark/DemoFileManager.h"
 #include "hardware/ConstantSystemInfo.h"
-#include "ui/BenchmarkUploadDialog.h"
 #include "ui/CustomWidgetWithTitle.h"
 #include "ui/DetailedGuideDialog.h"
 #include "ui/EACWarningDialog.h"
@@ -154,8 +153,6 @@ GameBenchmarkView::GameBenchmarkView(QWidget* parent)
     connect(progressUpdateTimer, &QTimer::timeout, this,
             &GameBenchmarkView::updateProgressDisplay);
 
-
-
     // Show EAC warning after UI elements are set up
     QTimer::singleShot(100, this, &GameBenchmarkView::showEACWarningIfNeeded);
 
@@ -176,7 +173,6 @@ void GameBenchmarkView::setupUI() {
 
   // Initialize member button variables first to avoid null pointer issues
   resultsButton = new QPushButton("Results", this);
-  uploadButton = new QPushButton("Upload Benchmark Data", this);
 
   // Create main layout with no margins
   QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -490,7 +486,7 @@ void GameBenchmarkView::setupUI() {
     QLabel* checkmarkLabel = new QLabel(this);
     checkmarkLabel->setFixedWidth(20);
     if (fileExists) {
-      checkmarkLabel->setText("✓");
+      checkmarkLabel->setText("âœ“");
       checkmarkLabel->setStyleSheet(
         "color: #44FF44; font-weight: bold; font-size: 14px; background: "
         "transparent;");
@@ -925,7 +921,7 @@ void GameBenchmarkView::setupUI() {
     outputContainerLayout->setSpacing(5);
 
     // Create expand button with hyperlink style - now using member variable
-    expandButton = new QPushButton("▼ Show Details", this);
+    expandButton = new QPushButton("â–¼ Show Details", this);
     expandButton->setStyleSheet(R"(
             QPushButton {
                 color: #0078d4;
@@ -1040,8 +1036,8 @@ void GameBenchmarkView::setupUI() {
     connect(expandButton, &QPushButton::clicked, [this]() {
       bool isExpanded = this->outputContent->isVisible();
       this->outputContent->setVisible(!isExpanded);
-      this->expandButton->setText(isExpanded ? "▼ Show Details"
-                                             : "▲ Hide Details");
+      this->expandButton->setText(isExpanded ? "â–¼ Show Details"
+                                             : "â–² Hide Details");
     });
 
     // Create cooldown timer
@@ -1118,13 +1114,13 @@ void GameBenchmarkView::setupUI() {
 
         if (reply == QMessageBox::Ok) {
           if (demoManager->copyDemoFiles(demosPath)) {
-            notificationBanner->setText("✓ Demo files copied successfully");
+            notificationBanner->setText("âœ“ Demo files copied successfully");
             notificationBanner->setStyleSheet(
               "QLabel { color: white; background: #28a745; padding: 8px; "
               "border-radius: 4px; font-size: 12px; }");
 
             // Update the checkmark
-            checkmarkLabel->setText("✓");
+            checkmarkLabel->setText("âœ“");
             checkmarkLabel->setStyleSheet(
               "color: #44FF44; font-weight: bold; font-size: 14px; background: "
               "transparent;");
@@ -1149,7 +1145,7 @@ void GameBenchmarkView::setupUI() {
             copyButton->setEnabled(false);
           } else {
             notificationBanner->setText(
-              "❌ Copy failed - Please add the files manually");
+              "âŒ Copy failed - Please add the files manually");
             notificationBanner->setStyleSheet(
               "QLabel { color: white; background: #dc3545; padding: 8px; "
               "border-radius: 4px; font-size: 12px; }");
@@ -1172,37 +1168,9 @@ void GameBenchmarkView::setupUI() {
         }
       });
 
-    LOG_INFO << "GameBenchmarkView: Copy button connected";
+        LOG_INFO << "GameBenchmarkView: Copy button connected";
 
-    // Add click handler
-    connect(
-      uploadButton, &QPushButton::clicked, this,
-      [this, notificationBanner, slideAnimation]() {
-        BenchmarkUploadDialog dialog(this);
-        if (dialog.exec() == QDialog::Accepted) {
-          notificationBanner->setText("✓ Benchmark data uploaded successfully");
-          notificationBanner->setStyleSheet(
-            "QLabel { color: white; background: #28a745; padding: 8px; "
-            "border-radius: 4px; font-size: 12px; }");
-
-          notificationBanner->setMaximumHeight(0);
-          notificationBanner->show();
-          slideAnimation->setStartValue(0);
-          slideAnimation->setEndValue(40);
-          slideAnimation->start();
-
-          QTimer::singleShot(
-            5000, this, [notificationBanner, slideAnimation]() {
-              slideAnimation->setStartValue(40);
-              slideAnimation->setEndValue(0);
-              slideAnimation->start();
-              QObject::connect(slideAnimation, &QPropertyAnimation::finished,
-                               notificationBanner, &QLabel::hide);
-            });
-        }
-      });
-
-    LOG_INFO << "GameBenchmarkView: Upload button connected";
+    // Upload button removed (uploads now automatic)
 
     // Add connection for benchmark status
     connect(
@@ -1247,7 +1215,7 @@ void GameBenchmarkView::setupUI() {
     resultsStackedWidget->addWidget(mainContentWidget);
     resultsStackedWidget->addWidget(resultsView);
 
-    LOG_INFO << "GameBenchmarkView: Results view added to stacked widget";
+    // LOG_INFO << "GameBenchmarkView: Results view added to stacked widget";
 
     // Connect results button to switch views
     connect(resultsButton, &QPushButton::clicked,
@@ -1275,7 +1243,7 @@ void GameBenchmarkView::setupUI() {
             [this, notificationBanner, slideAnimation](bool isActive) {
               if (isActive) {
                 notificationBanner->setText(
-                  "⚠️ Screen capture detected (NVENC). Stop recording/streaming "
+                  "âš ï¸ Screen capture detected (NVENC). Stop recording/streaming "
                   "(OBS, Discord Go Live, GeForce Experience/Instant Replay, "
                   "etc.) to avoid skewing FPS and frametime metrics.");
                 notificationBanner->setStyleSheet(
@@ -1315,7 +1283,7 @@ void GameBenchmarkView::setupUI() {
 
     // Update the checkmark based on whether the file exists in Rust demos folder
     if (fileExistsInRustDemos) {
-      checkmarkLabel->setText("✓");
+      checkmarkLabel->setText("âœ“");
       checkmarkLabel->setStyleSheet(
         "color: #44FF44; font-weight: bold; font-size: 14px; background: "
         "transparent;");
@@ -1398,7 +1366,7 @@ void GameBenchmarkView::setupUI() {
   QHBoxLayout* bottomPanelLayout = new QHBoxLayout(bottomPanel);
   bottomPanelLayout->setContentsMargins(10, 5, 10, 5);
 
-  // Create new buttons for the bottom panel
+  // Create new button for the bottom panel
   QPushButton* bottomResultsButton = new QPushButton("Results", this);
   bottomResultsButton->setStyleSheet(R"(
         QPushButton {
@@ -1416,31 +1384,8 @@ void GameBenchmarkView::setupUI() {
         }
     )");
 
-  QPushButton* bottomUploadButton =
-    new QPushButton("Upload Benchmark Data", this);
-  bottomUploadButton->setStyleSheet(R"(
-        QPushButton {
-            color: #ffffff;
-            background: #333333;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-        }
-        QPushButton:hover {
-            background: #404040;
-        }
-        QPushButton:pressed {
-            background: #292929;
-        }
-    )");
-
-  // Initialize the member variables
-  // resultsButton = new QPushButton("Results", this);
-  // uploadButton = new QPushButton("Upload Benchmark Data", this);
-
-  // Add spacer to push buttons to the right
+  // Add spacer to push button to the right
   bottomPanelLayout->addStretch();
-  bottomPanelLayout->addWidget(bottomUploadButton);
   bottomPanelLayout->addWidget(bottomResultsButton);
 
   // Connect these buttons to the same actions
@@ -1464,34 +1409,6 @@ void GameBenchmarkView::setupUI() {
     }
   });
 
-  connect(bottomUploadButton, &QPushButton::clicked, [this]() {
-    BenchmarkUploadDialog dialog(this);
-    if (dialog.exec() == QDialog::Accepted) {
-      if (notificationBanner && slideAnimation) {
-        notificationBanner->setText("✓ Benchmark data uploaded successfully");
-        notificationBanner->setStyleSheet(
-          "QLabel { color: white; background: #28a745; padding: 8px; "
-          "border-radius: 4px; font-size: 12px; }");
-
-        notificationBanner->setMaximumHeight(0);
-        notificationBanner->show();
-        slideAnimation->setStartValue(0);
-        slideAnimation->setEndValue(40);
-        slideAnimation->start();
-
-        QTimer::singleShot(5000, this, [this]() {
-          if (notificationBanner && slideAnimation) {
-            slideAnimation->setStartValue(40);
-            slideAnimation->setEndValue(0);
-            slideAnimation->start();
-            connect(slideAnimation, &QPropertyAnimation::finished,
-                    notificationBanner, &QLabel::hide);
-          }
-        });
-      }
-    }
-  });
-
   // First add output container to main layout, then the bottom panel last
   mainLayout->addWidget(outputContainer);
   mainLayout->addWidget(bottomPanel);
@@ -1510,7 +1427,7 @@ void GameBenchmarkView::onBenchmarkMetrics(const PM_METRICS& metrics) {
   // Auto-show output section on first metrics
   if (!receivedFirstMetrics) {
     outputContent->show();
-    expandButton->setText("▲ Hide Details");
+    expandButton->setText("â–² Hide Details");
     receivedFirstMetrics = true;
 
     // Initialize process name (only once)
@@ -1600,12 +1517,12 @@ void GameBenchmarkView::onBenchmarkMetrics(const PM_METRICS& metrics) {
   // Update display resolution
   if (metrics.destWidth > 0 && metrics.destHeight > 0) {
     displayInfoLabel->setText(
-      QString("Resolution: <span style='color: #0078d4;'>%1×%2</span>")
+      QString("Resolution: <span style='color: #0078d4;'>%1Ã—%2</span>")
         .arg(metrics.destWidth)
         .arg(metrics.destHeight));
     
     // Update resolution in bottom text
-    displayTextLabel->setText(QString("Resolution: <span style='color: #ffffff;'>%1×%2</span> | Process: <span style='color: #dddddd;'>RustClient.exe</span>").arg(metrics.destWidth).arg(metrics.destHeight));
+    displayTextLabel->setText(QString("Resolution: <span style='color: #ffffff;'>%1Ã—%2</span> | Process: <span style='color: #dddddd;'>RustClient.exe</span>").arg(metrics.destWidth).arg(metrics.destHeight));
   }
 
   // NOTE: Low FPS percentiles are now updated by onBenchmarkSample() which receives
@@ -1766,7 +1683,7 @@ void GameBenchmarkView::onBenchmarkSample(const BenchmarkDataPoint& sample) {
   // Auto-show output section on first metrics
   if (!receivedFirstMetrics) {
     outputContent->show();
-    expandButton->setText("▲ Hide Details");
+    expandButton->setText("â–² Hide Details");
     receivedFirstMetrics = true;
 
     // Initialize process name (only once)
@@ -1926,7 +1843,7 @@ void GameBenchmarkView::onBenchmarkSample(const BenchmarkDataPoint& sample) {
   // Update GPU temperature and VRAM
   if (sample.gpuTemp > 0) {
     QString tempColor = sample.gpuTemp > 80.0f ? "#FF4444" : (sample.gpuTemp > 70.0f ? "#FFAA00" : "#44FF44");
-    QString tempText = QString(" | Temp: <span style='color: %1;'>%2</span>°C")
+    QString tempText = QString(" | Temp: <span style='color: %1;'>%2</span>Â°C")
                          .arg(tempColor)
                          .arg(sample.gpuTemp, 0, 'f', 0);
     gpuUsageLabel->setText(gpuText + tempText);
@@ -1989,7 +1906,7 @@ void GameBenchmarkView::onBenchmarkFinished() {
     "<span style='color: #dddddd;'>GPU: -- ms (Avg) | -- ms (Max)</span>");
 
   outputContent->hide();
-  expandButton->setText("▼ Show Details");
+  expandButton->setText("â–¼ Show Details");
 
   // Start cooldown timer - during cooldown show appropriate text and disable button
   benchmarkButton->setText("Cooling down...");

@@ -14,6 +14,7 @@ class QString;
 class QPushButton;
 class QLabel;
 class SettingsToggle;
+struct UpdateStatus;
 
 class SettingsView : public QWidget {
   Q_OBJECT
@@ -44,6 +45,7 @@ class SettingsView : public QWidget {
   void OnElevatedPriorityChanged(const QString& id, bool enabled);
   void OnValidateMetricsOnStartupChanged(const QString& id, bool enabled);
   void OnDataCollectionChanged(const QString& id, bool enabled);
+  void OnOfflineModeChanged(const QString& id, bool enabled);
   void OnDetailedLogsChanged(const QString& id, bool enabled);
   void OnAutomaticDataUploadChanged(const QString& id, bool enabled);
   void OnOpenAppDataLocation();
@@ -51,7 +53,9 @@ class SettingsView : public QWidget {
   void OnRequestDataClicked();
   void OnDeleteDataClicked();
   void OnCheckUpdatesClicked();
-  void OnUpdateCheckComplete(bool updateAvailable, bool isCritical);
+  void OnUpdateStatusChanged(const UpdateStatus& status);
+  void OnUpdateCheckFailed(const QString& error);
+  void OnUpdateCheckStarted();
   bool eventFilter(QObject* watched, QEvent* event) override;
   void OnDeleteAllDataClicked();
 
@@ -71,6 +75,7 @@ class SettingsView : public QWidget {
   SettingsToggle* console_visibility_toggle_ = nullptr;
   SettingsToggle* validate_metrics_on_startup_toggle_ = nullptr;
   SettingsToggle* allow_data_collection_toggle_ = nullptr;
+  SettingsToggle* offline_mode_toggle_ = nullptr;
   SettingsToggle* detailed_logs_toggle_ = nullptr;
   SettingsToggle* automatic_data_upload_toggle_ = nullptr;
   QPushButton* appdata_button_ = nullptr;

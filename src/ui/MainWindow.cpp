@@ -12,6 +12,8 @@
 #include <QVBoxLayout>
 
 #include "CustomWidgetWithTitle.h"
+#include "CriticalUpdateDialog.h"
+#include "UpdateCenterView.h"
 #include "updates/UpdateManager.h"
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent) {
@@ -43,8 +45,7 @@ MainWindow::MainWindow(QWidget* parent)
   updateButton = new QPushButton("Update", navBar);
   settingsButton = new QPushButton("Settings", navBar);
   
-  // Hide update button initially (shown only when update is available)
-  updateButton->setVisible(false);
+  updateButton->setVisible(true);
 
   // Define navigation button style
   QString navButtonStyle = R"(
@@ -191,18 +192,37 @@ MainWindow::MainWindow(QWidget* parent)
   contentLayout->addWidget(notificationBanner);
 
   // Initialize views including the new SystemInfoView
+  LOG_INFO << "[startup] MainWindow: creating SystemInfoView";
   stackedWidget = new QStackedWidget(this);
   systemInfoView = new SystemInfoView(this);
+  LOG_INFO << "[startup] MainWindow: SystemInfoView created";
+
+  LOG_INFO << "[startup] MainWindow: creating DiagnosticView";
   diagnosticView = new DiagnosticView(this);
+  LOG_INFO << "[startup] MainWindow: DiagnosticView created";
+
+  LOG_INFO << "[startup] MainWindow: creating OptimizeView";
   optimizeView = new OptimizeView(this);
+  LOG_INFO << "[startup] MainWindow: OptimizeView created";
+
+  LOG_INFO << "[startup] MainWindow: creating GameBenchmarkView";
   gameBenchmarkView = new GameBenchmarkView(this);
+  LOG_INFO << "[startup] MainWindow: GameBenchmarkView created";
+
+  LOG_INFO << "[startup] MainWindow: creating UpdateCenterView";
+  updateView = new UpdateCenterView(this);
+  LOG_INFO << "[startup] MainWindow: UpdateCenterView created";
+
+  LOG_INFO << "[startup] MainWindow: creating SettingsView";
   settingsView = new SettingsView(this);
+  LOG_INFO << "[startup] MainWindow: SettingsView created";
 
   // Add views to stacked widget - SystemInfoView first
   stackedWidget->addWidget(systemInfoView);
   stackedWidget->addWidget(diagnosticView);
   stackedWidget->addWidget(optimizeView);
   stackedWidget->addWidget(gameBenchmarkView);
+  stackedWidget->addWidget(updateView);
   stackedWidget->addWidget(settingsView);
 
   // Add stacked widget to content layout
@@ -231,14 +251,19 @@ MainWindow::MainWindow(QWidget* parent)
           &MainWindow::cleanupResources);
 
   // Initialize and connect UpdateManager
+  LOG_INFO << "[startup] MainWindow: wiring UpdateManager signals";
   auto& updateManager = UpdateManager::getInstance();
-  connect(&updateManager, &UpdateManager::updateAvailable, this, &MainWindow::onUpdateAvailable);
-  connect(&updateManager, &UpdateManager::updateNotAvailable, this, &MainWindow::onUpdateNotAvailable);
-  connect(&updateManager, &UpdateManager::updateError, this, &MainWindow::onUpdateError);
+  connect(&updateManager, &UpdateManager::statusChanged, this, &MainWindow::onUpdateStatusChanged);
+  connect(&updateManager, &UpdateManager::criticalUpdateDetected, this, &MainWindow::onCriticalUpdateDetected);
+  onUpdateStatusChanged(updateManager.lastKnownStatus());
   
   // Initialize update manager (delayed to allow app to fully start)
-  QTimer::singleShot(2000, [&updateManager]() {
+  QTimer::singleShot(500, this, [&updateManager]() {
+    LOG_INFO << "[startup] UpdateManager: initialize() begin";
     updateManager.initialize();
+    LOG_INFO << "[startup] UpdateManager: checkForUpdates(userInitiated=true) begin";
+    updateManager.checkForUpdates(true);
+    LOG_INFO << "[startup] UpdateManager: initialize/check queued";
   });
 
   // Set the default window size to 950x800
@@ -371,56 +396,108 @@ void MainWindow::switchToSettings() {
 }
 
 void MainWindow::switchToUpdate() {
-  // Don't switch to a view, just show the update dialog
-  auto& updateManager = UpdateManager::getInstance();
-  updateManager.showUpdateDialog();
-  
-  // Reset button states (don't check update button)
+  stackedWidget->setCurrentWidget(updateView);
   systemInfoButton->setChecked(false);
   diagnosticsButton->setChecked(false);
   optimizeButton->setChecked(false);
   gameBenchmarkButton->setChecked(false);
-  updateButton->setChecked(false);
+  updateButton->setChecked(true);
   settingsButton->setChecked(false);
-  
-  // Return to the current view (keep the previous view active)
-  // We can check which view was active or default to system info
-  systemInfoButton->setChecked(true);
-  stackedWidget->setCurrentWidget(systemInfoView);
 }
 
-void MainWindow::onUpdateAvailable(const QString& version) {
-  LOG_INFO << "Update available: " << version.toStdString();
-  updateButton->setVisible(true);
-  updateButton->setText("🔄 Update Available");
-  updateButton->setStyleSheet(R"(
-    #navBar QPushButton {
-      background-color: #ff6b35 !important;
-      color: white !important;
-      border: none;
-      text-align: left;
-      padding: 8px 16px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: bold;
-    }
-    #navBar QPushButton:hover {
-      background-color: #ff8c42 !important;
-    }
-    #navBar QPushButton:pressed {
-      background-color: #e55a2b !important;
-    }
-  )");
+void MainWindow::onUpdateStatusChanged(const UpdateStatus& status) {
+  applyUpdateButtonStyle(status.tier, status.latestVersion);
+
+  if (!notificationBanner) return;
+  if (status.tier == UpdateTier::UpToDate) {
+    notificationBanner->hideNotification();
+  }
 }
 
-void MainWindow::onUpdateNotAvailable() {
-  LOG_INFO << "No update available";
-  updateButton->setVisible(false);
+void MainWindow::onCriticalUpdateDetected(const UpdateStatus& status) {
+  if (criticalDialogShown) return;
+  criticalDialogShown = true;
+
+  auto* dialog = new CriticalUpdateDialog(status, this);
+  connect(dialog, &CriticalUpdateDialog::updateSelected, this, [this]() {
+    switchToUpdate();
+    UpdateManager::getInstance().downloadAndInstallLatest();
+  });
+  connect(dialog, &CriticalUpdateDialog::skipSelected, this, []() {});
+  dialog->open();
 }
 
-void MainWindow::onUpdateError(const QString& error) {
-  LOG_ERROR << "Update check error: " << error.toStdString();
-  updateButton->setVisible(false);
+void MainWindow::applyUpdateButtonStyle(UpdateTier tier, const QString& versionText) {
+  QString label = "Updates";
+  switch (tier) {
+    case UpdateTier::Critical:
+      label = versionText.isEmpty() ? "Critical update" :
+              QStringLiteral("Critical %1").arg(versionText);
+      updateButton->setStyleSheet(R"(
+        #navBar QPushButton {
+          background-color: #b00020 !important;
+          color: white !important;
+          border: none;
+          text-align: left;
+          padding: 8px 16px;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: bold;
+        }
+        #navBar QPushButton:hover {
+          background-color: #c2182b !important;
+        }
+      )");
+      updateButton->setVisible(true);
+      break;
+    case UpdateTier::Suggestion:
+      label = versionText.isEmpty() ? "Update available" :
+              QStringLiteral("Update %1").arg(versionText);
+      updateButton->setStyleSheet(R"(
+        #navBar QPushButton {
+          background-color: #ff8c42 !important;
+          color: white !important;
+          border: none;
+          text-align: left;
+          padding: 8px 16px;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: bold;
+        }
+        #navBar QPushButton:hover {
+          background-color: #ff9f5c !important;
+        }
+      )");
+      updateButton->setVisible(true);
+      break;
+    case UpdateTier::UpToDate:
+    case UpdateTier::Unknown:
+    default:
+      label = "Updates";
+      updateButton->setStyleSheet(R"(
+        #navBar QPushButton {
+            background-color: transparent;
+            color: #ffffff;
+            border: none;
+            text-align: left;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        #navBar QPushButton:hover {
+            background-color: #333333;
+        }
+        #navBar QPushButton:checked {
+            background-color: #363636;
+            border: none;
+            padding: 8px 16px;
+        }
+      )");
+      updateButton->setVisible(true);
+      break;
+  }
+
+  updateButton->setText(label);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

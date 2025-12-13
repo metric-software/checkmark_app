@@ -2411,16 +2411,21 @@ void BenchmarkManager::accumulatePdhMetrics() {
 
   void BenchmarkManager::performAutomaticUpload() {
     try {
-      // Check if automatic upload is enabled
       ApplicationSettings& settings = ApplicationSettings::getInstance();
-    if (!settings.getEffectiveAutomaticDataUploadEnabled()) {
-      LOG_INFO << "Automatic data upload is disabled";
+    if (settings.isOfflineModeEnabled()) {
+      LOG_INFO << "Offline mode enabled, skipping automatic benchmark upload";
       return;
     }
 
     // Check if data collection is allowed (prerequisite)
     if (!settings.getAllowDataCollection()) {
       LOG_INFO << "Data collection is disabled, skipping automatic upload";
+      return;
+    }
+
+    // Check if automatic upload is enabled
+    if (!settings.getEffectiveAutomaticDataUploadEnabled()) {
+      LOG_INFO << "Automatic data upload is disabled";
       return;
     }
 

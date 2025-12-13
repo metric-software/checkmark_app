@@ -56,11 +56,14 @@ data/
 misc/comprison_data_files/
 misc/component_data/
 comparison.json
-#appcast.xml
+appcast.xml.in
 src/logging/Logger_.md
 
 
 build/
+version/
+
+scripts/publish_r2.ps1
 
 *.obj
 *.pch
@@ -70,5 +73,4 @@ build/
 *.user
 *.VC.db
 *.VC.VC.opendb
-
 

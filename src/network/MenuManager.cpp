@@ -1,5 +1,6 @@
 #include "MenuManager.h"
 #include "../logging/Logger.h"
+#include "../ApplicationSettings.h"
 
 MenuManager* MenuManager::s_instance = nullptr;
 
@@ -75,6 +76,11 @@ void MenuManager::refreshBenchmarkMenu() {
 }
 
 void MenuManager::refreshAllMenus() {
+    if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+        LOG_WARN << "MenuManager: Offline Mode enabled, skipping menu refresh";
+        return;
+    }
+
     LOG_INFO << "MenuManager: Refreshing all menus";
     refreshDiagnosticMenu();
     refreshBenchmarkMenu();

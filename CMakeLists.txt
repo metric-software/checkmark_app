@@ -2,7 +2,53 @@ cmake_minimum_required(VERSION 3.31...4.0)
 
 include("${CMAKE_SOURCE_DIR}/cmake/bootstrap.cmake")
 
-project(checkmark VERSION 0.1.0 LANGUAGES CXX)
+# ----------------------------------------------------------------------------
+# Version: single source of truth lives in version/app_version.iss
+# Format: MAJOR.MINOR.PATCH.BUILD (BUILD is optional; defaults to 0)
+# ----------------------------------------------------------------------------
+set(CHECKMARK_VERSION_FILE "${CMAKE_SOURCE_DIR}/version/app_version.iss")
+if(NOT EXISTS "${CHECKMARK_VERSION_FILE}")
+  message(FATAL_ERROR "Version file missing: ${CHECKMARK_VERSION_FILE}")
+endif()
+
+file(STRINGS "${CHECKMARK_VERSION_FILE}" CHECKMARK_VERSION_LINE REGEX "CheckmarkAppVersion")
+if(CHECKMARK_VERSION_LINE STREQUAL "")
+  message(FATAL_ERROR "CheckmarkAppVersion not found in ${CHECKMARK_VERSION_FILE}")
+endif()
+
+# Extract the quoted 4-part version string (MAJOR.MINOR.PATCH.BUILD)
+string(REGEX MATCH "CheckmarkAppVersion[^\\\"]*\\\"([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)\\\"" _ "${CHECKMARK_VERSION_LINE}")
+set(CHECKMARK_VERSION_RAW "${CMAKE_MATCH_1}")
+if(CHECKMARK_VERSION_RAW STREQUAL "")
+  message(FATAL_ERROR "Failed to parse CheckmarkAppVersion from ${CHECKMARK_VERSION_FILE}")
+endif()
+string(REPLACE "." ";" _CHECKMARK_VERSION_LIST "${CHECKMARK_VERSION_RAW}")
+list(LENGTH _CHECKMARK_VERSION_LIST _CHECKMARK_VERSION_PARTS)
+if(_CHECKMARK_VERSION_PARTS LESS 3)
+  message(FATAL_ERROR "CheckmarkAppVersion must contain at least MAJOR.MINOR.PATCH")
+endif()
+
+list(GET _CHECKMARK_VERSION_LIST 0 CHECKMARK_VERSION_MAJOR)
+list(GET _CHECKMARK_VERSION_LIST 1 CHECKMARK_VERSION_MINOR)
+list(GET _CHECKMARK_VERSION_LIST 2 CHECKMARK_VERSION_PATCH)
+if(_CHECKMARK_VERSION_PARTS GREATER 3)
+  list(GET _CHECKMARK_VERSION_LIST 3 CHECKMARK_VERSION_BUILD)
+else()
+  set(CHECKMARK_VERSION_BUILD 0)
+endif()
+
+set(CHECKMARK_PROJECT_VERSION "${CHECKMARK_VERSION_MAJOR}.${CHECKMARK_VERSION_MINOR}.${CHECKMARK_VERSION_PATCH}")
+set(CHECKMARK_VERSION_FULL "${CHECKMARK_PROJECT_VERSION}.${CHECKMARK_VERSION_BUILD}")
+set(CHECKMARK_VERSION_SHORT "${CHECKMARK_PROJECT_VERSION}")
+
+project(checkmark VERSION ${CHECKMARK_PROJECT_VERSION} LANGUAGES CXX)
+
+set(CHECKMARK_VERSION_RC "${CMAKE_BINARY_DIR}/generated/checkmark_version.rc")
+configure_file(
+  ${CMAKE_SOURCE_DIR}/cmake/windows/checkmark_version.rc.in
+  ${CHECKMARK_VERSION_RC}
+  @ONLY
+)
 
 include("${CMAKE_SOURCE_DIR}/cmake/configure.cmake")
 
@@ -33,11 +79,16 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE CHECKMARK_DEFAULT_BASE_URL="$
 # include directories for compiler
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src")
 
-# Versioning: allow a manual build number bump and generate a header
-set(CHECKMARK_VERSION_BUILD 0 CACHE STRING "Build number for fine-grained updates")
+# Versioning: propagate computed version/build into generated header
+set(CHECKMARK_VERSION_BUILD "${CHECKMARK_VERSION_BUILD}" CACHE STRING "Build number derived from version/app_version.iss" FORCE)
 configure_file(
   ${CMAKE_SOURCE_DIR}/src/version/checkmark_version.h.in
   ${CMAKE_BINARY_DIR}/generated/checkmark_version.h
+  @ONLY
+)
+configure_file(
+  ${CMAKE_SOURCE_DIR}/misc/appcast.xml.in
+  ${CMAKE_BINARY_DIR}/generated/appcast.xml
   @ONLY
 )
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_BINARY_DIR}/generated")
@@ -53,7 +104,7 @@ add_proto_library(benchmark_upload_proto PROTOS benchmark_upload.proto)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network cpuid::cpuid presentmon::core
   CUDA::nvml nvidia::nvapi
-  winsparkle::winsparkle spdlog::spdlog protobuf::libprotobuf diagnostic_proto
+  spdlog::spdlog protobuf::libprotobuf diagnostic_proto
   benchmark_common_proto benchmark_public_proto benchmark_full_proto benchmark_upload_proto
   d3d11.lib dxgi.lib d3dcompiler.lib
   powrprof.lib Pdh.Lib shcore.lib WS2_32.lib

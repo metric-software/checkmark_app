@@ -37,6 +37,15 @@ cmake --build build --config Release
 
 Output: `build/Release/checkmark.exe`
 
+
+Installer:
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" misc\inno_script.iss
+
+### Versioning
+
+- Bump `version/app_version.iss` (4-part version) before releases. CMake, the in-app updater, and the installer script all consume this file; no other source files need manual version edits. The appcast is generated from this value at build time into `build/generated/appcast.xml` (also copied beside the exe).
+
+
 ### Development Build (localhost server)
 
 ```bash

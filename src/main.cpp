@@ -39,6 +39,18 @@
 #include "network/MenuManager.h"
 #include "network/core/FeatureToggleManager.h"
 
+static const char* logLevelName(LogLevel level) {
+  switch (level) {
+    case TRACE_LEVEL: return "TRACE";
+    case DEBUG_LEVEL: return "DEBUG";
+    case INFO_LEVEL: return "INFO";
+    case WARN_LEVEL: return "WARN";
+    case ERROR_LEVEL: return "ERROR";
+    case FATAL_LEVEL: return "FATAL";
+    default: return "UNKNOWN";
+  }
+}
+
 // Global file stream for crash handler (legacy backup system)
 std::ofstream g_crash_log_file;
 
@@ -372,25 +384,34 @@ int main(int argc, char* argv[])
         // Redirect stdout
         std::cout.rdbuf(console_output_buf);
 
-        // Initialize new logger system first
-        std::filesystem::path new_log_path = log_dir / ("new_log_" + timestamp.str() + ".txt");
-        std::filesystem::path new_crash_path = log_dir / ("new_crash_" + timestamp.str() + ".txt");
-        
-        // Check if detailed logs are enabled in settings
-        ApplicationSettings& settings = ApplicationSettings::getInstance();
-        LogLevel logLevel = settings.getDetailedLogsEnabled() ? TRACE_LEVEL : ERROR_LEVEL;
-        
-      Logger::instance().init(new_log_path.string(), new_crash_path.string(), logLevel);
-          
-          // Log initial info to both systems
-      std::cout << "=== Log started at "
-                << std::put_time(&tm, "%Y-%m-%d %H:%M:%S")
-                     << " ===" << std::endl;
-                    
-          LOG_INFO << "=== New Logger System started at " << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << " ===";
-          LOG_INFO << "Legacy logging system kept as backup";
-        }
-      }
+         // Initialize new logger system first
+         std::filesystem::path new_log_path =
+           log_dir / ("new_log_" + timestamp.str() + ".txt");
+         std::filesystem::path new_crash_path =
+           log_dir / ("new_crash_" + timestamp.str() + ".txt");
+         
+         // Check if detailed logs are enabled in settings
+         ApplicationSettings& settings = ApplicationSettings::getInstance();
+         LogLevel logLevel =
+           settings.getDetailedLogsEnabled() ? TRACE_LEVEL : INFO_LEVEL;
+         
+         Logger::instance().init(new_log_path.string(), new_crash_path.string(),
+                                 logLevel);
+           
+         // Log initial info to both systems
+         std::cout << "=== Log started at "
+                   << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << " ==="
+                   << std::endl;
+                     
+         LOG_INFO << "=== New Logger System started at "
+                  << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << " ===";
+         LOG_INFO << "Legacy logging system kept as backup";
+         LOG_INFO << "[startup] Logger initialized (level="
+                  << logLevelName(logLevel) << ")";
+         }
+       }
+
+      LOG_INFO << "[startup] Early startup sequence begin";
 
       // Developer bypass: if a SECRETS file exists next to the executable and
       // contains the magic phrase, unlock all remote-gated experimental and
@@ -412,51 +433,68 @@ int main(int argc, char* argv[])
           LOG_WARN << "Developer bypass ENABLED via SECRETS file";
         }
       }
-  
+   
       // Fetch remote feature flags from backend. If the backend is offline or
       // returns an invalid response, all remote-controlled features will be
       // treated as disabled for this run.
       {
-      FeatureToggleManager featureToggleManager;
-      featureToggleManager.fetchAndApplyRemoteFlags();
-    }
+        LOG_INFO << "[startup] Feature flags fetch begin";
+        FeatureToggleManager featureToggleManager;
+        featureToggleManager.fetchAndApplyRemoteFlags();
+        LOG_INFO << "[startup] Feature flags fetch end";
+      }
 
-    // Set custom console visibility based on settings
-    customConsole->setVisibilityFromSettings();
+     // Set custom console visibility based on settings
+     LOG_INFO << "[startup] Apply console visibility settings";
+     customConsole->setVisibilityFromSettings();
 
-    // Initialize UserSystemProfile
-    QString appDataPath = QCoreApplication::applicationDirPath();
-    QString profilePath = appDataPath + "/profiles";
+     // Initialize UserSystemProfile
+     LOG_INFO << "[startup] UserSystemProfile initialize begin";
+     QString appDataPath = QCoreApplication::applicationDirPath();
+     QString profilePath = appDataPath + "/profiles";
 
-    // Create directory if it doesn't exist (using QDir directly)
-    QDir(profilePath).mkpath(".");
+     // Create directory if it doesn't exist (using QDir directly)
+     QDir(profilePath).mkpath(".");
 
-    // Initialize the user profile
-    auto& userProfile = SystemMetrics::UserSystemProfile::getInstance();
-    userProfile.initialize();
+     // Initialize the user profile
+     auto& userProfile = SystemMetrics::UserSystemProfile::getInstance();
+     userProfile.initialize();
 
-    // Save the profile using the standard location
-    userProfile.saveToFile(userProfile.getDefaultProfilePath());
+     // Save the profile using the standard location
+     userProfile.saveToFile(userProfile.getDefaultProfilePath());
+     LOG_INFO << "[startup] UserSystemProfile initialize end";
 
-    // Create and show loading window
-    LoadingWindow loadingWindow;
-    loadingWindow.show();
-    loadingWindow.setStatusMessage("Starting application...");
-    loadingWindow.setProgress(0);
+     // Create and show loading window
+     LOG_INFO << "[startup] LoadingWindow show";
+     LoadingWindow loadingWindow;
+     loadingWindow.show();
+     loadingWindow.setStatusMessage("Starting application...");
+     loadingWindow.setProgress(0);
 
-    // Set Qt message handler to redirect to both logging systems
-    qInstallMessageHandler(qtMessageHandler);
+     // Set Qt message handler to redirect to both logging systems
+     LOG_INFO << "[startup] Install Qt message handler";
+     qInstallMessageHandler(qtMessageHandler);
 
-    // Update loading window
-    loadingWindow.setStatusMessage("Collecting system information...");
-    loadingWindow.setProgress(5);
+     // Update loading window
+     loadingWindow.setStatusMessage("Collecting system information...");
+     loadingWindow.setProgress(5);
 
-    // Update loading window
-    loadingWindow.setStatusMessage("Initializing hardware monitoring...");
-    loadingWindow.setProgress(10);
+     // Update loading window
+     loadingWindow.setStatusMessage("Initializing hardware monitoring...");
+     loadingWindow.setProgress(10);
 
-    // Collect constant system info
-    SystemMetrics::CollectConstantSystemInfo();
+     // Collect constant system info
+     LOG_INFO << "[startup] CollectConstantSystemInfo begin";
+     try {
+       SystemMetrics::CollectConstantSystemInfo();
+     } catch (const std::exception& e) {
+       LOG_FATAL << "[startup] CollectConstantSystemInfo threw: " << e.what();
+       throw;
+     } catch (...) {
+       LOG_FATAL << "[startup] CollectConstantSystemInfo threw unknown exception";
+       throw;
+     }
+     LOG_INFO << "[startup] CollectConstantSystemInfo end";
 
     // Check if metrics validation should run on startup
     if (ApplicationSettings::getInstance().getValidateMetricsOnStartup()) {
@@ -487,8 +525,10 @@ int main(int argc, char* argv[])
       !ApplicationSettings::getInstance().hasAcceptedTerms();
 
     // Setup optimizations
+    LOG_INFO << "[startup] OptimizationManager::Initialize begin";
     LOG_INFO << "Initializing optimization systems...";
     optimizations::OptimizationManager::GetInstance().Initialize();
+    LOG_INFO << "[startup] OptimizationManager::Initialize end";
     loadingWindow.setProgress(85);
 
     // Finalizing initialization
@@ -512,12 +552,16 @@ int main(int argc, char* argv[])
     }
 
     // Initialize MenuManager for centralized menu fetching
+    LOG_INFO << "[startup] MenuManager::initialize begin";
     LOG_INFO << "Initializing MenuManager for diagnostic and benchmark menus...";
     MenuManager::getInstance().initialize();
+    LOG_INFO << "[startup] MenuManager::initialize end";
 
     // Create the main window
+    LOG_INFO << "[startup] MainWindow construct/show begin";
     MainWindow w;
     w.show();
+    LOG_INFO << "[startup] MainWindow construct/show end";
 
     return app->exec();
   } catch (const std::exception& e) {

@@ -67,7 +67,6 @@ class DiagnosticView : public QWidget {
   void updateProgress(int progress);
   void handleAdminElevation();  // Make sure this declaration is properly saved
   void updateNetworkResults(const QString& result);
-  void onUploadResults();
 
  private:
   void setupLayout();

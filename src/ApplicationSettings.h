@@ -64,6 +64,10 @@ class ApplicationSettings {
   bool getAllowDataCollection() const;
   void setAllowDataCollection(bool enabled);
 
+  // Offline mode setting (disables uploads/downloads)
+  bool isOfflineModeEnabled() const;
+  void setOfflineModeEnabled(bool enabled);
+
   // Detailed logs setting (developer oriented)
   bool getDetailedLogsEnabled() const;
   void setDetailedLogsEnabled(bool enabled);

@@ -3,6 +3,7 @@
 #include "../serialization/JsonSerializer.h"
 #include "../crypto/NullCryptoProvider.h"
 #include "../../logging/Logger.h"
+#include "../../ApplicationSettings.h"
 #include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -94,6 +95,15 @@ void BaseApiClient::del(const QString& path, ApiCallback callback,
 void BaseApiClient::sendRequest(const RequestBuilder& builder, const QVariant& data, 
                                ApiCallback callback, bool useCache, const QString& cacheKey, int ttlSeconds,
                                const QString& expectedProtoType) {
+    if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+        ApiResponse response;
+        response.error = "Offline mode is enabled";
+        LOG_WARN << "Network request blocked because Offline Mode is enabled for path: "
+                 << builder.build().url.toStdString();
+        callback(response);
+        return;
+    }
+
     if (!m_networkClient) {
         ApiResponse response;
         response.error = "Network client not configured";

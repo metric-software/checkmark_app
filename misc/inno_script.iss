@@ -1,5 +1,7 @@
+#include "..\\version\\app_version.iss"
+
 #define AppName "Checkmark"
-#define AppVersion "0.1.0.0"
+#define AppVersion CheckmarkAppVersion
 #define AppPublisher "Metric Software OY"
 #define AppExeName "checkmark.exe"
 
@@ -43,15 +45,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 ; Explicitly include d3dcompiler_47.dll
 Source: "..\build\Release\d3dcompiler_47.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
-; WinSparkle DLL for auto-updates (try build output first, then vcpkg bin)
-Source: "..\build\Release\WinSparkle.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\build\vcpkg_installed\x64-windows\bin\WinSparkle.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-
 ; Main executable
 Source: "..\build\Release\checkmark.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Qt and other DLLs from release folder (excluding results directories)
-Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*"
+Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*"
 
 ; License files (include only if present)
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

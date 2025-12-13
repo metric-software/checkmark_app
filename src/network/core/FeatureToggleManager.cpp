@@ -18,6 +18,12 @@ FeatureToggleManager::FeatureToggleManager(QObject* parent)
 
 void FeatureToggleManager::fetchAndApplyRemoteFlags() {
   try {
+    if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+      LOG_WARN << "FeatureToggleManager: Offline Mode enabled, skipping remote flag fetch";
+      ApplicationSettings::getInstance().setRemoteFeatureFlags(false, false, false);
+      return;
+    }
+
     auto& config = NetworkConfig::instance();
     QString baseUrl = config.getBaseUrl();
     if (baseUrl.isEmpty()) {
@@ -123,4 +129,3 @@ void FeatureToggleManager::fetchAndApplyRemoteFlags() {
     ApplicationSettings::getInstance().setRemoteFeatureFlags(false, false, false);
   }
 }
-

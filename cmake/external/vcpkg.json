@@ -5,7 +5,6 @@
     "presentmon",
     "spdlog",
     "krabsetw",
-    "winsparkle",
     "protobuf"
   ]
 }

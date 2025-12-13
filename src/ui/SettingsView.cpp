@@ -72,11 +72,18 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
     "Allow the application to upload your data for analysis and improvements. You can disable this to use the application in offline mode, but we cannot provide better data analysis or personalized results.",
     settings_widget);
   settings_layout->addWidget(allow_data_collection_toggle_);
+
+  // Offline Mode toggle
+  offline_mode_toggle_ = new SettingsToggle(
+    "offline_mode", "Offline Mode",
+    "Disable all data sharing. When enabled, the app will not download remote data or upload results in the background.",
+    settings_widget);
+  settings_layout->addWidget(offline_mode_toggle_);
   
   // Automatic Data Upload toggle
   automatic_data_upload_toggle_ = new SettingsToggle(
     "automatic_data_upload", "Automatic Data Upload",
-    "Automatically upload benchmark and diagnostic data when tests complete. When disabled, you will need to manually upload data using the upload dialogs.",
+    "Automatically upload benchmark and diagnostic data in the background when runs finish. Disable to keep results local unless Offline Mode is enabled.",
     settings_widget);
   settings_layout->addWidget(automatic_data_upload_toggle_);
   
@@ -124,6 +131,7 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   bool elevated_priority = app_settings_instance.getElevatedPriorityEnabled();
   bool validate_metrics_on_startup = app_settings_instance.getValidateMetricsOnStartup();
   bool allow_data_collection = app_settings_instance.getAllowDataCollection();
+  bool offline_mode_enabled = app_settings_instance.isOfflineModeEnabled();
   bool detailed_logs_enabled = app_settings_instance.getDetailedLogsEnabled();
   bool automatic_data_upload_enabled = app_settings_instance.getAutomaticDataUploadEnabled();
   // Set toggle states (using setEnabled as per existing pattern for
@@ -133,8 +141,21 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   elevated_priority_toggle_->setEnabled(elevated_priority);
   validate_metrics_on_startup_toggle_->setEnabled(validate_metrics_on_startup);
   allow_data_collection_toggle_->setEnabled(allow_data_collection);
+  offline_mode_toggle_->setEnabled(offline_mode_enabled);
   detailed_logs_toggle_->setEnabled(detailed_logs_enabled);
   automatic_data_upload_toggle_->setEnabled(automatic_data_upload_enabled);
+  // Show dependent toggles as greyed out when offline overrides them
+  if (offline_mode_enabled) {
+    if (allow_data_collection_toggle_) {
+      allow_data_collection_toggle_->setDisabledStyle(true);
+    }
+    if (automatic_data_upload_toggle_) {
+      automatic_data_upload_toggle_->setDisabledStyle(true);
+    }
+    if (check_updates_button_) {
+      check_updates_button_->setEnabled(false);
+    }
+  }
   // Connect toggle state changes
   connect(experimental_features_toggle_, &SettingsToggle::stateChanged, this,
           &SettingsView::OnExperimentalFeaturesChanged);
@@ -146,6 +167,8 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
           &SettingsView::OnValidateMetricsOnStartupChanged);
   connect(allow_data_collection_toggle_, &SettingsToggle::stateChanged, this,
           &SettingsView::OnDataCollectionChanged);
+  connect(offline_mode_toggle_, &SettingsToggle::stateChanged, this,
+          &SettingsView::OnOfflineModeChanged);
   connect(detailed_logs_toggle_, &SettingsToggle::stateChanged, this,
           &SettingsView::OnDetailedLogsChanged);
   connect(automatic_data_upload_toggle_, &SettingsToggle::stateChanged, this,
@@ -201,6 +224,19 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   update_status_label_ = new QLabel("Update status: Checking...", settings_widget);
   update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px; margin-left: 0px;");
   settings_layout->addWidget(update_status_label_);
+  if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+    check_updates_button_->setEnabled(false);
+    update_status_label_->setText("Update status: Offline mode enabled");
+  }
+
+  UpdateManager& updateManager = UpdateManager::getInstance();
+  connect(&updateManager, &UpdateManager::statusChanged, this, &SettingsView::OnUpdateStatusChanged);
+  connect(&updateManager, &UpdateManager::checkFailed, this, &SettingsView::OnUpdateCheckFailed);
+  connect(&updateManager, &UpdateManager::checkStarted, this, &SettingsView::OnUpdateCheckStarted);
+  if (!offline_mode_enabled) {
+    OnUpdateStatusChanged(updateManager.lastKnownStatus());
+  }
+
   settings_layout->addSpacing(20);
   settings_layout->addStretch(1);
   settings_area_->setWidget(settings_widget);
@@ -611,8 +647,21 @@ void SettingsView::OnResetSettingsClicked() {
     elevated_priority_toggle_->setEnabled(false);
     validate_metrics_on_startup_toggle_->setEnabled(true);  // Default to true
     allow_data_collection_toggle_->setEnabled(true);  // Default to true
+    if (allow_data_collection_toggle_) {
+      allow_data_collection_toggle_->setDisabledStyle(false);
+    }
+    if (offline_mode_toggle_) {
+      offline_mode_toggle_->setEnabled(false);  // Default to off
+      offline_mode_toggle_->setDisabledStyle(false);
+    }
     detailed_logs_toggle_->setEnabled(false);  // Default to false
     automatic_data_upload_toggle_->setEnabled(true);  // Default to true
+    if (automatic_data_upload_toggle_) {
+      automatic_data_upload_toggle_->setDisabledStyle(false);
+    }
+    if (check_updates_button_) {
+      check_updates_button_->setEnabled(true);
+    }
 
     // Show confirmation with a custom silent dialog
     QDialog infoDialog(this);
@@ -809,6 +858,10 @@ void SettingsView::saveSettings() {
     settings.setAllowDataCollection(allow_data_collection_toggle_->isEnabled());
   }
 
+  if (offline_mode_toggle_) {
+    settings.setOfflineModeEnabled(offline_mode_toggle_->isEnabled());
+  }
+
   if (detailed_logs_toggle_) {
     settings.setDetailedLogsEnabled(detailed_logs_toggle_->isEnabled());
   }
@@ -831,6 +884,8 @@ void SettingsView::saveSettings() {
                        settings.getValidateMetricsOnStartup());
   appSettings.setValue("AllowDataCollection",
                        settings.getAllowDataCollection());
+  appSettings.setValue("Network/OfflineModeEnabled",
+                       settings.isOfflineModeEnabled());
   appSettings.setValue("DetailedLogs",
                        settings.getDetailedLogsEnabled());
   appSettings.setValue("AutomaticDataUpload",
@@ -1107,6 +1162,28 @@ void SettingsView::OnDataCollectionChanged(const QString& id, bool enabled) {
   ApplicationSettings::getInstance().setAllowDataCollection(enabled);
 }
 
+void SettingsView::OnOfflineModeChanged(const QString& id, bool enabled) {
+  ApplicationSettings& settings = ApplicationSettings::getInstance();
+  settings.setOfflineModeEnabled(enabled);
+
+  // Grey-out dependent data sharing toggles while offline overrides them
+  if (allow_data_collection_toggle_) {
+    allow_data_collection_toggle_->setDisabledStyle(enabled);
+  }
+  if (automatic_data_upload_toggle_) {
+    automatic_data_upload_toggle_->setDisabledStyle(enabled);
+  }
+
+  // Disable update checks when offline
+  if (check_updates_button_) {
+    check_updates_button_->setEnabled(!enabled);
+  }
+  if (update_status_label_ && enabled) {
+    update_status_label_->setText("Update status: Offline mode enabled");
+    update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+  }
+}
+
 void SettingsView::OnDetailedLogsChanged(const QString& id, bool enabled) {
   // Save the setting
   ApplicationSettings::getInstance().setDetailedLogsEnabled(enabled);
@@ -1227,75 +1304,73 @@ void SettingsView::OnOpenAppDataLocation() {
 }
 
 void SettingsView::OnCheckUpdatesClicked() {
-  // Update UI to show checking state
-  if (update_status_label_) {
-    update_status_label_->setText("Update status: Checking...");
-    update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+  if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+    if (update_status_label_) {
+      update_status_label_->setText("Update status: Offline mode enabled");
+    }
+    return;
   }
-  
-  // Disable the button during check
-  if (check_updates_button_) {
-    check_updates_button_->setEnabled(false);
-    check_updates_button_->setText("Checking...");
-  }
-  
-  // Get UpdateManager instance and connect signals
+
   UpdateManager& updateManager = UpdateManager::getInstance();
-  
-  // Connect signals for this check (disconnect any previous connections)
-  disconnect(&updateManager, &UpdateManager::updateAvailable, this, nullptr);
-  disconnect(&updateManager, &UpdateManager::criticalUpdateAvailable, this, nullptr);
-  disconnect(&updateManager, &UpdateManager::updateNotAvailable, this, nullptr);
-  disconnect(&updateManager, &UpdateManager::updateError, this, nullptr);
-  
-  connect(&updateManager, &UpdateManager::updateAvailable, this, [this](const QString& version) {
-    OnUpdateCheckComplete(true, false);  // normal update
-  });
-  
-  connect(&updateManager, &UpdateManager::criticalUpdateAvailable, this, [this](const QString& version) {
-    OnUpdateCheckComplete(true, true);  // critical update
-  });
-  
-  connect(&updateManager, &UpdateManager::updateNotAvailable, this, [this]() {
-    OnUpdateCheckComplete(false, false);
-  });
-  
-  connect(&updateManager, &UpdateManager::updateError, this, [this](const QString& error) {
-    OnUpdateCheckComplete(false, false);  // Treat error as up to date
-  });
-  
-  // Initialize UpdateManager if not already done
   updateManager.initialize();
-  
-  // Start the update check
-  updateManager.checkForUpdates();
+  OnUpdateCheckStarted();
+  updateManager.checkForUpdates(true);
 }
 
-void SettingsView::OnUpdateCheckComplete(bool updateAvailable, bool isCritical) {
-  
-  // Re-enable the button
+void SettingsView::OnUpdateStatusChanged(const UpdateStatus& status) {
   if (check_updates_button_) {
     check_updates_button_->setEnabled(true);
     check_updates_button_->setText("Check for Updates");
   }
-  
-  // Update the status label
-  if (update_status_label_) {
-    if (updateAvailable) {
-      if (isCritical) {
-        update_status_label_->setText("Update status: Critical Update Available");
-        update_status_label_->setStyleSheet("color: #FF0000; font-size: 12px; font-weight: bold;");  // Red, bold
-        
-        // TODO: For critical updates, we would force the update here in the future
-        // For now, just display the status
-      } else {
-        update_status_label_->setText("Update status: Update Available");
-        update_status_label_->setStyleSheet("color: #FF9900; font-size: 12px;");  // Orange
-      }
-    } else {
+
+  if (!update_status_label_) return;
+
+  if (status.offline) {
+    update_status_label_->setText("Update status: Offline mode enabled");
+    update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+    return;
+  }
+
+  switch (status.tier) {
+    case UpdateTier::Critical:
+      update_status_label_->setText("Update status: Critical Update Available");
+      update_status_label_->setStyleSheet("color: #FF0000; font-size: 12px; font-weight: bold;");
+      break;
+    case UpdateTier::Suggestion:
+      update_status_label_->setText("Update status: Update Available");
+      update_status_label_->setStyleSheet("color: #FF9900; font-size: 12px;");
+      break;
+    case UpdateTier::UpToDate:
       update_status_label_->setText("Update status: Up To Date");
-      update_status_label_->setStyleSheet("color: #4A90E2; font-size: 12px;");  // Blue
-    }
+      update_status_label_->setStyleSheet("color: #4A90E2; font-size: 12px;");
+      break;
+    case UpdateTier::Unknown:
+    default:
+      update_status_label_->setText(QString("Update status: %1").arg(status.statusMessage));
+      update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+      break;
+  }
+}
+
+void SettingsView::OnUpdateCheckFailed(const QString& error) {
+  if (check_updates_button_) {
+    check_updates_button_->setEnabled(true);
+    check_updates_button_->setText("Check for Updates");
+  }
+  if (update_status_label_) {
+    update_status_label_->setText(QString("Update status: %1").arg(error));
+    update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+  }
+}
+
+void SettingsView::OnUpdateCheckStarted() {
+  if (update_status_label_) {
+    update_status_label_->setText("Update status: Checking...");
+    update_status_label_->setStyleSheet("color: #C7C7C7; font-size: 12px;");
+  }
+  if (check_updates_button_) {
+    check_updates_button_->setEnabled(false);
+    check_updates_button_->setText("Checking...");
   }
 }
 

@@ -59,7 +59,6 @@ class GameBenchmarkView : public QWidget {
   QPushButton* expandButton;
   BenchmarkManager* benchmark;
   QPushButton* benchmarkButton;
-  QPushButton* uploadButton;   // Add missing button
   QPushButton* resultsButton;  // Add missing button
 
   QWidget* mainContentWidget;
