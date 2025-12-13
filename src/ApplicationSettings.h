@@ -89,7 +89,11 @@ class ApplicationSettings {
   bool areRemoteFeatureFlagsInitialized() const;
 
   // Effective settings (local preference AND remote flag AND online status)
+  // "Allow data collection" is overridden by Offline Mode.
+  bool getEffectiveAllowDataCollection() const;
   bool getEffectiveExperimentalFeaturesEnabled() const;
+  // Effective permission to upload user-generated benchmark/diagnostic data.
+  // This is governed by Offline Mode, Allow Data Collection, and backend remote flags.
   bool getEffectiveAutomaticDataUploadEnabled() const;
 
  private:

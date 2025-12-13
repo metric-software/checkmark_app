@@ -13,6 +13,7 @@
 #include "DataPreviewWindow.h"
 #include "SilentNotificationBanner.h"
 #include "../network/api/UploadApiClient.h"
+#include "../ApplicationSettings.h"
 
 DiagnosticUploadDialog::DiagnosticUploadDialog(QWidget* parent)
     : QDialog(parent), uploadApiClient(nullptr) {
@@ -142,6 +143,16 @@ DiagnosticUploadDialog::DiagnosticUploadDialog(QWidget* parent)
 
   // Load diagnostic runs
   loadDiagnosticRuns();
+
+  if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+    notificationBanner->showNotification("Offline Mode is enabled. Uploading is disabled.",
+                                         SilentNotificationBanner::Error);
+    uploadButton->setEnabled(false);
+  } else if (!ApplicationSettings::getInstance().getAllowDataCollection()) {
+    notificationBanner->showNotification("Allow data collection is disabled. Uploading is disabled.",
+                                         SilentNotificationBanner::Error);
+    uploadButton->setEnabled(false);
+  }
 }
 
 void DiagnosticUploadDialog::loadDiagnosticRuns() {

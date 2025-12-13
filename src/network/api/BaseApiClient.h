@@ -65,11 +65,11 @@ protected:
     std::shared_ptr<NetworkCache> m_cache;
 
 private:
-    void handleNetworkResponse(const NetworkResponse& response, ApiCallback callback, 
-                              const QString& cacheKey, bool shouldCache, int ttlSeconds,
+    void handleNetworkResponse(const NetworkResponse& response, const QString& url, HttpMethod method,
+                              ApiCallback callback, const QString& cacheKey, bool shouldCache, int ttlSeconds,
                               const QString& expectedProtoType);
     QString generateCacheKey(const QString& path, const QVariant& data = QVariant()) const;
-    ApiResponse createApiResponse(const NetworkResponse& response,
+    ApiResponse createApiResponse(const NetworkResponse& response, const QString& url, HttpMethod method,
                                   const QString& expectedProtoType) const;
     
 private slots:

@@ -8,6 +8,7 @@
 #include <google/protobuf/util/time_util.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/timestamp.pb.h>  // Added for Timestamp handling
+#include <google/protobuf/struct.pb.h>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <cmath>
@@ -21,7 +22,7 @@
 using namespace diagnostic;
 
 ProtobufSerializer::ProtobufSerializer() {
-    LOG_INFO << "ProtobufSerializer initialized";
+    LOG_WARN << "ProtobufSerializer initialized";
 }
 
 ProtobufSerializer::~ProtobufSerializer() = default;
@@ -84,7 +85,10 @@ DeserializationResult ProtobufSerializer::deserialize(const QByteArray& data,
     DeserializationResult result;
     
     try {
-        LOG_INFO << "Attempting protobuf deserialization of " << data.size() << " bytes";
+        if (!expectedType.isEmpty()) {
+            LOG_WARN << "Protobuf deserialize: expected=" << expectedType.toStdString()
+                     << " bytes=" << data.size();
+        }
         
         // Validate input data
         if (data.isEmpty()) {
@@ -107,25 +111,31 @@ DeserializationResult ProtobufSerializer::deserialize(const QByteArray& data,
                 if (typeName == QLatin1String("DiagnosticSubmission")) {
                     DiagnosticSubmission msg;
                     if (msg.ParseFromArray(data.constData(), data.size()) && msg.IsInitialized()) {
-                        LOG_INFO << "Protobuf deserializer (forced): DiagnosticSubmission";
+                        LOG_WARN << "Protobuf deserializer (forced): DiagnosticSubmission";
                         return convertMessageToVariant(msg);
                     }
                 } else if (typeName == QLatin1String("MenuResponse")) {
                     MenuResponse msg;
                     if (msg.ParseFromArray(data.constData(), data.size()) && msg.IsInitialized()) {
-                        LOG_INFO << "Protobuf deserializer (forced): MenuResponse";
+                        LOG_WARN << "Protobuf deserializer (forced): MenuResponse";
                         return convertMessageToVariant(msg);
                     }
                 } else if (typeName == QLatin1String("ComponentComparison")) {
                     ComponentComparison msg;
                     if (msg.ParseFromArray(data.constData(), data.size()) && msg.IsInitialized()) {
-                        LOG_INFO << "Protobuf deserializer (forced): ComponentComparison";
+                        LOG_WARN << "Protobuf deserializer (forced): ComponentComparison";
+                        return convertMessageToVariant(msg);
+                    }
+                } else if (typeName == QLatin1String("Struct")) {
+                    google::protobuf::Struct msg;
+                    if (msg.ParseFromArray(data.constData(), data.size()) && msg.IsInitialized()) {
+                        LOG_WARN << "Protobuf deserializer (forced): google.protobuf.Struct";
                         return convertMessageToVariant(msg);
                     }
                 } else if (typeName == QLatin1String("UploadResponse")) {
                     UploadResponse msg;
                     if (msg.ParseFromArray(data.constData(), data.size()) && msg.IsInitialized()) {
-                        LOG_INFO << "Protobuf deserializer (forced): UploadResponse";
+                        LOG_WARN << "Protobuf deserializer (forced): UploadResponse";
                         return convertMessageToVariant(msg);
                     }
                 }
@@ -330,7 +340,26 @@ QVariant ProtobufSerializer::convertMessageToVariant(const google::protobuf::Mes
             LOG_ERROR << "Invalid protobuf message descriptor or reflection";
             return result;
         }
-    LOG_INFO << "Converting protobuf message: " << descriptor->full_name();
+        // Keep conversion logging minimal; raw/parsed payloads are dumped by BaseApiClient.
+        
+        // Special handling for well-known Struct/Value types used by /pb/diagnostics/general.
+        // Reflection-based conversion doesn't understand map semantics for Struct fields.
+        if (descriptor->full_name() == "google.protobuf.Struct" ||
+            descriptor->full_name() == "google.protobuf.Value" ||
+            descriptor->full_name() == "google.protobuf.ListValue") {
+            std::string jsonOut;
+            google::protobuf::util::JsonPrintOptions opts;
+            opts.preserve_proto_field_names = true;
+            const auto status = google::protobuf::util::MessageToJsonString(message, &jsonOut, opts);
+            if (status.ok()) {
+                QJsonParseError err;
+                const QByteArray bytes = QByteArray::fromStdString(jsonOut);
+                QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+                if (err.error == QJsonParseError::NoError) {
+                    return doc.toVariant();
+                }
+            }
+        }
         
         for (int i = 0; i < descriptor->field_count(); ++i) {
             const google::protobuf::FieldDescriptor* field = descriptor->field(i);
@@ -344,10 +373,61 @@ QVariant ProtobufSerializer::convertMessageToVariant(const google::protobuf::Mes
             try {
                 // Handle repeated fields differently
                 if (field->is_repeated()) {
-                    LOG_INFO << "Processing repeated field: " << fieldName;
                     int count = reflection->FieldSize(message, field);
                     if (count == 0) {
                         continue; // Skip empty repeated fields
+                    }
+
+                    // Map fields are encoded as repeated key/value entry messages.
+                    if (field->is_map()) {
+                        QVariantMap mapOut;
+                        for (int j = 0; j < count; ++j) {
+                            const google::protobuf::Message& entry = reflection->GetRepeatedMessage(message, field, j);
+                            const google::protobuf::Descriptor* ed = entry.GetDescriptor();
+                            const google::protobuf::Reflection* er = entry.GetReflection();
+                            if (!ed || !er) continue;
+
+                            const auto* keyField = ed->FindFieldByName("key");
+                            const auto* valueField = ed->FindFieldByName("value");
+                            if (!keyField || !valueField) continue;
+
+                            QString key;
+                            if (keyField->type() == google::protobuf::FieldDescriptor::TYPE_STRING) {
+                                key = QString::fromStdString(er->GetString(entry, keyField));
+                            } else if (keyField->type() == google::protobuf::FieldDescriptor::TYPE_INT32) {
+                                key = QString::number(er->GetInt32(entry, keyField));
+                            } else {
+                                continue;
+                            }
+
+                            QVariant value;
+                            switch (valueField->type()) {
+                                case google::protobuf::FieldDescriptor::TYPE_STRING:
+                                    value = QString::fromStdString(er->GetString(entry, valueField));
+                                    break;
+                                case google::protobuf::FieldDescriptor::TYPE_INT32:
+                                    value = er->GetInt32(entry, valueField);
+                                    break;
+                                case google::protobuf::FieldDescriptor::TYPE_DOUBLE:
+                                    value = er->GetDouble(entry, valueField);
+                                    break;
+                                case google::protobuf::FieldDescriptor::TYPE_BOOL:
+                                    value = er->GetBool(entry, valueField);
+                                    break;
+                                case google::protobuf::FieldDescriptor::TYPE_MESSAGE:
+                                    value = convertMessageToVariant(er->GetMessage(entry, valueField));
+                                    break;
+                                default:
+                                    continue;
+                            }
+
+                            mapOut.insert(key, value);
+                        }
+
+                        if (!mapOut.isEmpty()) {
+                            result[QString::fromStdString(fieldName)] = mapOut;
+                        }
+                        continue;
                     }
                     
                     QVariantList list;
@@ -439,18 +519,6 @@ QVariant ProtobufSerializer::convertMessageToVariant(const google::protobuf::Mes
                     }
                     
                     result[QString::fromStdString(fieldName)] = fieldValue;
-                    // Log value types but avoid dumping large nested objects
-                    if (field->type() == google::protobuf::FieldDescriptor::TYPE_STRING) {
-                        LOG_INFO << "Set field '" << fieldName << "' (string)";
-                    } else if (field->type() == google::protobuf::FieldDescriptor::TYPE_INT32) {
-                        LOG_INFO << "Set field '" << fieldName << "' (int32)";
-                    } else if (field->type() == google::protobuf::FieldDescriptor::TYPE_DOUBLE) {
-                        LOG_INFO << "Set field '" << fieldName << "' (double)";
-                    } else if (field->type() == google::protobuf::FieldDescriptor::TYPE_BOOL) {
-                        LOG_INFO << "Set field '" << fieldName << "' (bool)";
-                    } else if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-                        LOG_INFO << "Set field '" << fieldName << "' (message)";
-                    }
                 }
             } catch (const std::exception& e) {
                 LOG_WARN << "Exception converting field " << fieldName << ": " << e.what();

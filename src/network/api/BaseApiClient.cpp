@@ -5,9 +5,15 @@
 #include "../../logging/Logger.h"
 #include "../../ApplicationSettings.h"
 #include <QCryptographicHash>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
+#include <QUrl>
 
 BaseApiClient::BaseApiClient(QObject* parent)
     : QObject(parent) {
@@ -113,7 +119,10 @@ void BaseApiClient::sendRequest(const RequestBuilder& builder, const QVariant& d
     }
     
     NetworkRequest request = builder.build();
-    LOG_INFO << "Sending " << static_cast<int>(request.method) << " request to: " << request.url.toStdString();
+    LOG_WARN << "HTTP request: method=" << static_cast<int>(request.method)
+             << " url=" << request.url.toStdString()
+             << " cache=" << (useCache ? "on" : "off")
+             << " expected=" << expectedProtoType.toStdString();
     emit requestStarted(request.url);
     
     // Serialize data if provided
@@ -137,7 +146,6 @@ void BaseApiClient::sendRequest(const RequestBuilder& builder, const QVariant& d
         }
         
         request.body = serResult.data;
-        LOG_INFO << "Request body size: " << request.body.size() << " bytes";
         
         // Set content type
         if (!request.headers.contains("Content-Type")) {
@@ -152,24 +160,123 @@ void BaseApiClient::sendRequest(const RequestBuilder& builder, const QVariant& d
     }
     
     // Send the request
-    LOG_INFO << "Dispatching request to network client...";
-    m_networkClient->sendRequest(request, [this, callback, cacheKey, useCache, ttlSeconds, url = request.url,
+    m_networkClient->sendRequest(request, [this, callback, cacheKey, useCache, ttlSeconds, url = request.url, method = request.method,
                                            expectedProtoType]
                                  (const NetworkResponse& response) {
-        LOG_INFO << "Network response received - success: " << response.success 
-                 << ", status: " << response.statusCode;
-        if (!response.success) {
-            LOG_ERROR << "Network response error: " << response.error.toStdString();
+        LOG_WARN << "HTTP response: status=" << response.statusCode
+                 << " success=" << response.success
+                 << " bytes=" << response.body.size()
+                 << " url=" << url.toStdString();
+        if (!response.success && !response.error.isEmpty()) {
+            LOG_WARN << "HTTP response error: " << response.error.toStdString();
         }
-    handleNetworkResponse(response, callback, cacheKey, useCache, ttlSeconds, expectedProtoType);
+        handleNetworkResponse(response, url, method, callback, cacheKey, useCache, ttlSeconds, expectedProtoType);
         emit requestCompleted(url, response.success);
     });
 }
 
-void BaseApiClient::handleNetworkResponse(const NetworkResponse& response, ApiCallback callback, 
-                     const QString& cacheKey, bool shouldCache, int ttlSeconds,
+static QString methodToString(HttpMethod method) {
+    switch (method) {
+        case HttpMethod::GET: return QStringLiteral("GET");
+        case HttpMethod::POST: return QStringLiteral("POST");
+        case HttpMethod::PUT: return QStringLiteral("PUT");
+        case HttpMethod::DELETE_METHOD: return QStringLiteral("DELETE");
+    }
+    return QStringLiteral("UNKNOWN");
+}
+
+static QString sanitizeForFilename(QString s) {
+    s.replace("\\", "_");
+    s.replace("/", "_");
+    s.replace("?", "_");
+    s.replace("&", "_");
+    s.replace("=", "_");
+    s.replace(":", "_");
+    s.replace("*", "_");
+    s.replace("\"", "_");
+    s.replace("<", "_");
+    s.replace(">", "_");
+    s.replace("|", "_");
+    s.replace(" ", "_");
+    while (s.contains("__")) s.replace("__", "_");
+    if (s.size() > 120) s = s.left(120);
+    return s;
+}
+
+static void dumpNetworkExchangeToDisk(const QString& url, HttpMethod method, const NetworkResponse& response,
+                                      const QString& expectedProtoType, const QString& typeHint,
+                                      const ApiResponse& apiResponse, const QByteArray& decryptedBody) {
+    try {
+        const QString baseDir = QCoreApplication::applicationDirPath() + QStringLiteral("/network_responses");
+        QDir().mkpath(baseDir);
+
+        const QString ts = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+        const QByteArray urlHash = QCryptographicHash::hash(url.toUtf8(), QCryptographicHash::Md5).toHex().left(8);
+        const QUrl qurl(url);
+        const QString pathPart = sanitizeForFilename(qurl.path() + (qurl.hasQuery() ? ("?" + qurl.query()) : QString()));
+        const QString prefix = QStringLiteral("%1_%2_%3_%4")
+            .arg(ts, methodToString(method), pathPart, QString::fromLatin1(urlHash));
+
+        // Raw body (as received)
+        {
+            QFile f(baseDir + "/" + prefix + ".raw.bin");
+            if (f.open(QIODevice::WriteOnly)) {
+                f.write(response.body);
+            }
+        }
+
+        // Decrypted/plain body bytes
+        if (decryptedBody != response.body) {
+            QFile f(baseDir + "/" + prefix + ".body.bin");
+            if (f.open(QIODevice::WriteOnly)) {
+                f.write(decryptedBody);
+            }
+        }
+
+        // Parsed payload (best-effort)
+        if (apiResponse.data.type() == QVariant::Map || apiResponse.data.type() == QVariant::List) {
+            QFile f(baseDir + "/" + prefix + ".parsed.json");
+            if (f.open(QIODevice::WriteOnly)) {
+                QJsonDocument doc = QJsonDocument::fromVariant(apiResponse.data);
+                f.write(doc.toJson(QJsonDocument::Indented));
+            }
+        } else if (apiResponse.data.canConvert<QString>()) {
+            QFile f(baseDir + "/" + prefix + ".parsed.txt");
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                QTextStream tsOut(&f);
+                tsOut << apiResponse.data.toString();
+            }
+        }
+
+        // Meta info
+        {
+            QFile f(baseDir + "/" + prefix + ".meta.txt");
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                QTextStream out(&f);
+                out << "url=" << url << "\n";
+                out << "method=" << methodToString(method) << "\n";
+                out << "status=" << response.statusCode << "\n";
+                out << "success=" << response.success << "\n";
+                out << "expected=" << expectedProtoType << "\n";
+                out << "typeHint=" << typeHint << "\n";
+                out << "rawBytes=" << response.body.size() << "\n";
+                out << "bodyBytes=" << decryptedBody.size() << "\n";
+                if (!apiResponse.error.isEmpty()) out << "error=" << apiResponse.error << "\n";
+                out << "\nresponse_headers:\n";
+                for (auto it = response.headers.begin(); it != response.headers.end(); ++it) {
+                    out << it.key() << ": " << it.value() << "\n";
+                }
+            }
+        }
+    } catch (...) {
+        // Never let dumping affect app behavior.
+    }
+}
+
+void BaseApiClient::handleNetworkResponse(const NetworkResponse& response, const QString& url, HttpMethod method,
+                     ApiCallback callback, const QString& cacheKey, bool shouldCache, int ttlSeconds,
                      const QString& expectedProtoType) {
-    ApiResponse apiResponse = createApiResponse(response, expectedProtoType);
+    ApiResponse apiResponse = createApiResponse(response, url, method, expectedProtoType);
     
     if (apiResponse.success && shouldCache && m_cache && !cacheKey.isEmpty()) {
     // ttlSeconds==0 -> NetworkCache uses its default TTL
@@ -203,7 +310,7 @@ QString BaseApiClient::generateCacheKey(const QString& path, const QVariant& dat
     return key;
 }
 
-ApiResponse BaseApiClient::createApiResponse(const NetworkResponse& response,
+ApiResponse BaseApiClient::createApiResponse(const NetworkResponse& response, const QString& url, HttpMethod method,
                                              const QString& expectedProtoType) const {
     ApiResponse apiResponse;
     apiResponse.success = response.success;
@@ -212,25 +319,8 @@ ApiResponse BaseApiClient::createApiResponse(const NetworkResponse& response,
     
     if (!response.success) {
         apiResponse.error = response.error;
+        dumpNetworkExchangeToDisk(url, method, response, expectedProtoType, QString(), apiResponse, response.body);
         return apiResponse;
-    }
-    
-    // FIRST CONTACT: log raw network response bytes and relevant headers before any processing
-    try {
-        QString contentType = response.headers.value(QStringLiteral("Content-Type"));
-        LOG_INFO << "Raw network response - status:" << response.statusCode << ", size:" << response.body.size() << "bytes, Content-Type:" << contentType.toStdString();
-
-        // Log a small hex preview of the first bytes (up to 64)
-        QString rawHex;
-        int maxBytes = qMin(response.body.size(), 64);
-        for (int i = 0; i < maxBytes; ++i) {
-            rawHex += QString("%1 ").arg(static_cast<unsigned char>(response.body[i]), 2, 16, QChar('0'));
-        }
-        if (!rawHex.isEmpty()) {
-            LOG_INFO << "Raw response head (hex): " << rawHex.toStdString();
-        }
-    } catch (const std::exception& e) {
-        LOG_WARN << "Failed to log raw network response: " << e.what();
     }
 
     // Decrypt if needed
@@ -240,60 +330,17 @@ ApiResponse BaseApiClient::createApiResponse(const NetworkResponse& response,
         // This is where we would decrypt: responseData = decrypted data
     }
 
-    // POST-DECRYPT: log decrypted/plain bytes (attempt text preview and hex fallback)
-    try {
-        LOG_INFO << "Post-decrypt response size: " << responseData.size() << " bytes";
-        QString textPreview = QString::fromUtf8(responseData);
-        bool isMostlyText = !textPreview.trimmed().isEmpty() && textPreview.size() <= 1024 && !textPreview.contains(QChar('\0'));
-        if (isMostlyText) {
-            QString preview = textPreview;
-            if (preview.size() > 1024) preview = preview.left(1024) + QStringLiteral("...");
-            LOG_INFO << "Post-decrypt text preview: " << preview.toStdString();
-        } else {
-            // hex preview of first 128 bytes
-            QString hexPreview;
-            int maxBytes2 = qMin(responseData.size(), 128);
-            for (int i = 0; i < maxBytes2; ++i) {
-                hexPreview += QString("%1 ").arg(static_cast<unsigned char>(responseData[i]), 2, 16, QChar('0'));
-            }
-            if (!hexPreview.isEmpty()) {
-                LOG_INFO << "Post-decrypt hex preview: " << hexPreview.toStdString();
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG_WARN << "Failed to log post-decrypt response: " << e.what();
-    }
     
     // Deserialize response
+    QString typeHint;
     if (m_serializer && !responseData.isEmpty()) {
-        QString typeHint = expectedProtoType;
+        typeHint = expectedProtoType;
         if (typeHint.isEmpty()) {
             typeHint = response.headers.value(QStringLiteral("X-Protobuf-Message"));
         }
         DeserializationResult deserResult = m_serializer->deserialize(responseData, typeHint);
         if (deserResult.success) {
             apiResponse.data = deserResult.data;
-
-            // Log deserialized result (type + small preview)
-            try {
-                LOG_INFO << "Deserialization successful - QVariant type: " << QString(deserResult.data.typeName()).toStdString();
-                if (deserResult.data.type() == QVariant::Map) {
-                    QVariantMap vm = deserResult.data.toMap();
-                    QJsonObject jo = QJsonObject::fromVariantMap(vm);
-                    QByteArray j = QJsonDocument(jo).toJson(QJsonDocument::Compact);
-                    QString out = QString::fromUtf8(j);
-                    if (out.size() > 2000) out = out.left(2000) + QStringLiteral("...");
-                    LOG_INFO << "Deserialized JSON preview: " << out.toStdString();
-                } else if (deserResult.data.canConvert<QString>()) {
-                    QString s = deserResult.data.toString();
-                    QString out = s;
-                    if (out.size() > 2000) out = out.left(2000) + QStringLiteral("...");
-                    LOG_INFO << "Deserialized string preview: " << out.toStdString();
-                }
-            } catch (const std::exception& e) {
-                LOG_WARN << "Failed to log deserialized data preview: " << e.what();
-            }
-
         } else {
             apiResponse.success = false;
             apiResponse.error = "Deserialization failed: " + deserResult.error;
@@ -302,6 +349,13 @@ ApiResponse BaseApiClient::createApiResponse(const NetworkResponse& response,
         // Raw data
         apiResponse.data = QString::fromUtf8(responseData);
     }
+
+    dumpNetworkExchangeToDisk(url, method, response, expectedProtoType, typeHint, apiResponse, responseData);
+    LOG_WARN << "HTTP parsed: url=" << url.toStdString()
+             << " status=" << apiResponse.statusCode
+             << " ok=" << apiResponse.success
+             << " typeHint=" << typeHint.toStdString()
+             << " variantType=" << (apiResponse.success ? apiResponse.data.typeName() : "n/a");
     
     return apiResponse;
 }

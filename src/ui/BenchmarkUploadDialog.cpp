@@ -15,6 +15,7 @@
 #include "../network/api/BenchmarkApiClient.h"
 #include "../network/serialization/PublicExportBuilder.h"
 #include "../logging/Logger.h"
+#include "../ApplicationSettings.h"
 
 BenchmarkUploadDialog::BenchmarkUploadDialog(QWidget* parent)
     : QDialog(parent), m_uploadInProgress(false) {
@@ -117,6 +118,16 @@ BenchmarkUploadDialog::BenchmarkUploadDialog(QWidget* parent)
 
   // Load benchmark runs
   loadBenchmarkRuns();
+
+  if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+    notificationBanner->showNotification("Offline Mode is enabled. Uploading is disabled.",
+                                         SilentNotificationBanner::Error);
+    selectButton->setEnabled(false);
+  } else if (!ApplicationSettings::getInstance().getAllowDataCollection()) {
+    notificationBanner->showNotification("Allow data collection is disabled. Uploading is disabled.",
+                                         SilentNotificationBanner::Error);
+    selectButton->setEnabled(false);
+  }
   
   LOG_INFO << "BenchmarkUploadDialog initialized";
 }

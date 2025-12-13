@@ -73,6 +73,20 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
     allComparisonData = loadGPUComparisonData();
   }
 
+  if (downloadClient) {
+    GPUComparisonData general{};
+    general.model = DownloadApiClient::generalAverageLabel();
+    general.fullModel = DownloadApiClient::generalAverageLabel();
+    general.vendor = "";
+    general.vramMB = 0;
+    general.driverVersion = "";
+    general.pcieGen = 0;
+    general.pciLinkWidth = 0;
+    general.fps = 0;
+    general.frames = 0;
+    allComparisonData[DownloadApiClient::generalAverageLabel()] = general;
+  }
+
   // Find maximum FPS value across all GPUs (both user and comparison)
   double maxFPS = averageFPS;
 
@@ -201,6 +215,11 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
   // Create and add the dropdown
   QComboBox* dropdown =
     createGPUComparisonDropdown(allComparisonData, gpuMetricsWidget, fpsVals, downloadClient);
+  dropdown->setObjectName("gpu_comparison_dropdown");
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) dropdown->setCurrentIndex(idx);
+  }
 
   titleLayout->addWidget(dropdown);
   gpuMetricsLayout->addWidget(titleWidget, 1, 0, 1, 3);
@@ -680,8 +699,10 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
               QRegularExpression("^comparison_bar_"));
             
             // Create display name
-            QString displayName = componentName + " (" +
-              (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
+            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+              ? componentName
+              : componentName + " (" +
+                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "GPUResultRenderer: Updating comparison bars with fetched data";
             
@@ -811,10 +832,10 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
     }
 
     // Create display name with aggregation type
-    QString displayName =
-      componentName + " (" +
-      (type == DiagnosticViewComponents::AggregationType::Best ? "Best)"
-                                                               : "Avg)");
+    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+      ? componentName
+      : componentName + " (" +
+          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
 
     // Structure to hold test data for updating bars
     struct TestData {

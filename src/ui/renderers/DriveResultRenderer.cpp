@@ -42,6 +42,17 @@ QWidget* DriveResultRenderer::createDriveResultWidget(const QString& result, con
     allComparisonData = loadDriveComparisonData();
   }
 
+  if (downloadClient) {
+    DriveComparisonData general{};
+    general.model = DownloadApiClient::generalAverageLabel();
+    general.driveType = "";
+    general.readSpeedMBs = 0;
+    general.writeSpeedMBs = 0;
+    general.iops4k = 0;
+    general.accessTimeMs = 0;
+    allComparisonData[DownloadApiClient::generalAverageLabel()] = general;
+  }
+
   // Variables to track maximum values - include both user drives and comparison
   // drives
   double maxReadSpeed = 0.0;
@@ -169,6 +180,11 @@ QWidget* DriveResultRenderer::processDriveData(
   QComboBox* dropdown = createDriveComparisonDropdown(
     comparisonData, driveMetricsWidget, readSpeedVals, writeSpeedVals, iopsVals,
     accessTimeVals, downloadClient);
+  dropdown->setObjectName("drive_comparison_dropdown");
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) dropdown->setCurrentIndex(idx);
+  }
 
   titleLayout->addWidget(dropdown);
   mainLayout->addWidget(titleWidget);
@@ -709,8 +725,10 @@ QComboBox* DriveResultRenderer::createDriveComparisonDropdown(
               QRegularExpression("^comparison_bar_"));
             
             // Create display name
-            QString displayName = componentName + " (" +
-              (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
+            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+              ? componentName
+              : componentName + " (" +
+                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "DriveResultRenderer: Updating comparison bars with fetched data";
             
@@ -859,10 +877,10 @@ QComboBox* DriveResultRenderer::createDriveComparisonDropdown(
     };
 
     // Create display name with aggregation type
-    QString displayName =
-      componentName + " (" +
-      (type == DiagnosticViewComponents::AggregationType::Best ? "Best)"
-                                                               : "Avg)");
+    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+      ? componentName
+      : componentName + " (" +
+          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
 
     // Add drive type if available
     if (!driveData.driveType.isEmpty() && driveData.driveType != "Unknown") {

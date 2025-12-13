@@ -45,6 +45,15 @@ DiagnosticView::DiagnosticView(QWidget* parent)
   LOG_INFO << "[startup] DiagnosticView: ctor begin";
   worker = new DiagnosticWorker(this);
 
+  // Use the shared diagnostics DownloadApiClient owned by MenuManager so caching,
+  // general prefetch, and response dumping are consistent across the app.
+  downloadClient = MenuManager::getInstance().diagnosticApiClient();
+  if (downloadClient) {
+    LOG_WARN << "[startup] DiagnosticView: using shared DownloadApiClient from MenuManager";
+  } else {
+    LOG_WARN << "[startup] DiagnosticView: DownloadApiClient is null (comparison downloads disabled)";
+  }
+
   // Connect to MenuManager for comparison data (centralized menu management)
   connect(&MenuManager::getInstance(), &MenuManager::diagnosticMenuUpdated,
           this, [this](const MenuData& menuData) {
@@ -56,7 +65,7 @@ DiagnosticView::DiagnosticView(QWidget* parent)
     // Store the menu data for use by component renderers
     cachedMenuData = menuData;
     menuDataLoaded = true;
-    LOG_INFO << "DiagnosticView: Menu data cached successfully for component comparison dropdowns";
+    //LOG_INFO << "DiagnosticView: Menu data cached successfully for component comparison dropdowns";
   });
   
   connect(&MenuManager::getInstance(), &MenuManager::menuRefreshError,
@@ -1945,6 +1954,16 @@ void DiagnosticView::diagnosticsFinished() {
     m_isCurrentlyExecuting = true;
 
     LOG_INFO << "DiagnosticView::diagnosticsFinished called";
+
+    if (downloadClient) {
+      downloadClient->prefetchGeneralDiagnostics([](bool success, const QString& error) {
+        if (success) {
+          LOG_INFO << "Prefetched general diagnostics averages for comparison slots";
+        } else {
+          LOG_WARN << "Failed to prefetch general diagnostics averages: " << error.toStdString();
+        }
+      });
+    }
 
     // Force progress bar to 100%
     lastProgressValue = 100;

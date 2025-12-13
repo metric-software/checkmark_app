@@ -1,8 +1,11 @@
 #include "DownloadApiClient.h"
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QUrl>
+#include <cmath>
 #include "../serialization/ProtobufSerializer.h"
+#include "../../ApplicationSettings.h"
 #include "../../logging/Logger.h"
 
 DownloadApiClient::DownloadApiClient(QObject* parent)
@@ -11,7 +14,20 @@ DownloadApiClient::DownloadApiClient(QObject* parent)
     setSerializer(std::make_shared<ProtobufSerializer>());
 }
 
+void DownloadApiClient::prefetchGeneralDiagnostics(GeneralCallback callback) {
+    ensureGeneralDiagnosticsReady(std::move(callback));
+}
+
 void DownloadApiClient::fetchMenu(MenuCallback callback) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "DownloadApiClient: Menu fetch blocked: " << error.toStdString();
+        emit downloadError(error);
+        callback(false, MenuData(), error);
+        return;
+    }
     LOG_INFO << "DownloadApiClient: Fetching menu from /pb/menu (protobuf)";
     RequestBuilder b = RequestBuilder::get("/pb/menu");
     constexpr int kTTL = 60; // 1 minute cache for menu
@@ -31,6 +47,9 @@ void DownloadApiClient::fetchMenu(MenuCallback callback) {
                 
                 emit menuFetched(menuData);
                 callback(true, menuData, QString());
+
+                // Prefetch general averages alongside menu so comparison slots can populate immediately.
+                prefetchGeneralDiagnostics();
             } else {
                 LOG_ERROR << "Menu fetch failed: " << response.error.toStdString();
                 emit downloadError(response.error);
@@ -47,17 +66,51 @@ void DownloadApiClient::fetchMenu(MenuCallback callback) {
             emit downloadError(error);
             callback(false, MenuData(), error);
         }
-    }, /*useCache=*/true, /*cacheKey=*/QString::fromLatin1("/pb/menu"), kTTL);
+    }, /*useCache=*/true, /*cacheKey=*/QString::fromLatin1("/pb/menu"), kTTL, /*expectedProtoType=*/QStringLiteral("MenuResponse"));
 }
 
 void DownloadApiClient::fetchComponentData(const QString& componentType, const QString& modelName, 
                                           ComponentCallback callback) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "DownloadApiClient: Component fetch blocked: " << error.toStdString();
+        emit downloadError(error);
+        callback(false, ComponentData(), error);
+        return;
+    }
     // Validate inputs
     if (componentType.isEmpty() || modelName.isEmpty()) {
         QString error = QString("Invalid component request: type='%1', model='%2'")
                          .arg(componentType, modelName);
         emit downloadError(error);
         callback(false, ComponentData(), error);
+        return;
+    }
+
+    // Special-case: aggregated cross-user averages via /api/diagnostics/general
+    if (modelName == generalAverageLabel() &&
+        (componentType == QLatin1String("cpu") || componentType == QLatin1String("gpu") ||
+         componentType == QLatin1String("memory") || componentType == QLatin1String("drive"))) {
+        ensureGeneralDiagnosticsReady([this, componentType, modelName, callback](bool success, const QString& error) {
+            if (!success) {
+                emit downloadError(error);
+                callback(false, ComponentData(), error);
+                return;
+            }
+
+            if (!m_generalComponents.contains(componentType)) {
+                QString e = QString("General diagnostics missing component: %1").arg(componentType);
+                emit downloadError(e);
+                callback(false, ComponentData(), e);
+                return;
+            }
+
+            const ComponentData componentData = m_generalComponents.value(componentType);
+            emit componentDataFetched(componentType, modelName, componentData);
+            callback(true, componentData, QString());
+        });
         return;
     }
     LOG_INFO << "DownloadApiClient: Fetching comparison data - type: " << componentType.toStdString()
@@ -83,7 +136,15 @@ void DownloadApiClient::fetchComponentData(const QString& componentType, const Q
         if (!endpointTemplate.startsWith("/pb/")) {
             endpointTemplate = "/pb" + endpointTemplate;
         }
-        endpoint = endpointTemplate.replace("{model_name}", QUrl::toPercentEncoding(modelName));
+        if (endpointTemplate.contains("{model_name}")) {
+            endpoint = endpointTemplate.replace("{model_name}", QUrl::toPercentEncoding(modelName));
+        } else {
+            // Menu currently returns base endpoint; attach model query param.
+            endpoint = endpointTemplate;
+            if (!endpoint.contains("?")) {
+                endpoint += QString("?model=%1").arg(QUrl::toPercentEncoding(modelName));
+            }
+        }
         LOG_INFO << "DownloadApiClient: Using menu-provided endpoint template for type '" 
                  << componentType.toStdString() << "' -> " << endpointTemplate.toStdString();
     } else {
@@ -110,7 +171,160 @@ void DownloadApiClient::fetchComponentData(const QString& componentType, const Q
             emit downloadError(response.error);
             callback(false, ComponentData(), response.error);
         }
-    });
+    }, /*useCache=*/true, /*expectedProtoType=*/QStringLiteral("ComponentComparison"));
+}
+
+void DownloadApiClient::ensureGeneralDiagnosticsReady(GeneralCallback callback) {
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    constexpr int kTTLSeconds = 15 * 60;
+
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        if (callback) callback(false, error);
+        return;
+    }
+
+    if (m_generalCached && m_generalFetchedAtUtc.isValid() &&
+        m_generalFetchedAtUtc.secsTo(now) < kTTLSeconds) {
+        if (callback) callback(true, QString());
+        return;
+    }
+
+    if (callback) {
+        m_generalWaiters.push_back(std::move(callback));
+    }
+
+    if (m_generalFetchInFlight) {
+        return;
+    }
+
+    m_generalFetchInFlight = true;
+
+    RequestBuilder b = RequestBuilder::get("/pb/diagnostics/general");
+    b.addHeader(QStringLiteral("Accept"),
+                m_serializer ? m_serializer->getContentType()
+                             : QStringLiteral("application/x-protobuf"));
+    const QString cacheKey = QStringLiteral("/pb/diagnostics/general");
+
+    sendRequest(b, QVariant(), [this](const ApiResponse& response) {
+        m_generalFetchInFlight = false;
+
+        QList<GeneralCallback> waiters = std::move(m_generalWaiters);
+        m_generalWaiters.clear();
+
+        if (!response.success) {
+            for (const auto& w : waiters) {
+                if (w) w(false, response.error);
+            }
+            return;
+        }
+
+        parseAndCacheGeneralDiagnostics(response.data);
+        m_generalFetchedAtUtc = QDateTime::currentDateTimeUtc();
+        m_generalCached = true;
+
+        for (const auto& w : waiters) {
+            if (w) w(true, QString());
+        }
+
+    }, /*useCache=*/true, /*cacheKey=*/cacheKey, /*ttlSeconds=*/kTTLSeconds, /*expectedProtoType=*/QStringLiteral("Struct"));
+}
+
+static QJsonObject toJsonObjectOrEmpty(const QVariant& v) {
+    if (v.type() != QVariant::Map) return QJsonObject();
+    return QJsonObject::fromVariantMap(v.toMap());
+}
+
+void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
+    m_generalComponents.clear();
+    m_generalMeta = QJsonObject();
+
+    if (data.type() != QVariant::Map) {
+        LOG_ERROR << "General diagnostics data is not a map, got type: " << data.typeName();
+        return;
+    }
+
+    const QVariantMap root = data.toMap();
+    m_generalMeta = toJsonObjectOrEmpty(root.value(QStringLiteral("meta")));
+
+    // High-level diagnostic logging for debugging. Detailed payload is dumped to disk by BaseApiClient.
+    try {
+        const int sampleCount = m_generalMeta.value(QStringLiteral("sample_count")).toInt();
+        LOG_WARN << "General diagnostics: parsed keys=" << root.keys().join(", ").toStdString()
+                 << " sample_count=" << sampleCount;
+    } catch (...) {
+        LOG_WARN << "General diagnostics: parsed (failed to summarize meta)";
+    }
+
+    const QString label = generalAverageLabel();
+
+    auto makeComponent = [&](const QString& type, const QJsonObject& testData) {
+        ComponentData out;
+        out.componentName = label;
+        out.testData = testData;
+        out.metaData = m_generalMeta;
+        m_generalComponents.insert(type, out);
+    };
+
+    // CPU: map general schema into existing CPUComparison-shaped JSON (used by renderers)
+    if (root.contains(QStringLiteral("cpu")) && root.value(QStringLiteral("cpu")).type() == QVariant::Map) {
+        const QVariantMap cpu = root.value(QStringLiteral("cpu")).toMap();
+        QJsonObject cpuObj;
+        cpuObj.insert(QStringLiteral("model"), label);
+        cpuObj.insert(QStringLiteral("full_model"), label);
+        cpuObj.insert(QStringLiteral("cores"), static_cast<int>(std::round(cpu.value(QStringLiteral("cores_avg")).toDouble())));
+        cpuObj.insert(QStringLiteral("threads"), static_cast<int>(std::round(cpu.value(QStringLiteral("threads_avg")).toDouble())));
+        cpuObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(cpu.value(QStringLiteral("benchmark_results"))));
+
+        // cache_latencies: server uses latency_ns; renderers expect latency (ns)
+        QJsonArray cacheLatencies;
+        const QVariant v = cpu.value(QStringLiteral("cache_latencies"));
+        if (v.type() == QVariant::List) {
+            const QVariantList lst = v.toList();
+            for (const QVariant& item : lst) {
+                if (item.type() != QVariant::Map) continue;
+                const QVariantMap m = item.toMap();
+                QJsonObject e;
+                e.insert(QStringLiteral("size_kb"), m.value(QStringLiteral("size_kb")).toInt());
+                e.insert(QStringLiteral("latency"), m.value(QStringLiteral("latency_ns")).toDouble());
+                cacheLatencies.append(e);
+            }
+        }
+        cpuObj.insert(QStringLiteral("cache_latencies"), cacheLatencies);
+
+        makeComponent(QStringLiteral("cpu"), cpuObj);
+    }
+
+    // GPU
+    if (root.contains(QStringLiteral("gpu")) && root.value(QStringLiteral("gpu")).type() == QVariant::Map) {
+        const QVariantMap gpu = root.value(QStringLiteral("gpu")).toMap();
+        QJsonObject gpuObj;
+        gpuObj.insert(QStringLiteral("model"), label);
+        gpuObj.insert(QStringLiteral("full_model"), label);
+        gpuObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(gpu.value(QStringLiteral("benchmark_results"))));
+        makeComponent(QStringLiteral("gpu"), gpuObj);
+    }
+
+    // Memory
+    if (root.contains(QStringLiteral("memory")) && root.value(QStringLiteral("memory")).type() == QVariant::Map) {
+        const QVariantMap mem = root.value(QStringLiteral("memory")).toMap();
+        QJsonObject memObj;
+        memObj.insert(QStringLiteral("model"), label);
+        memObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(mem.value(QStringLiteral("benchmark_results"))));
+        memObj.insert(QStringLiteral("total_memory_gb"), mem.value(QStringLiteral("total_memory_gb")).toDouble());
+        makeComponent(QStringLiteral("memory"), memObj);
+    }
+
+    // Drive
+    if (root.contains(QStringLiteral("drive")) && root.value(QStringLiteral("drive")).type() == QVariant::Map) {
+        const QVariantMap drive = root.value(QStringLiteral("drive")).toMap();
+        QJsonObject driveObj;
+        driveObj.insert(QStringLiteral("model"), label);
+        driveObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(drive.value(QStringLiteral("benchmark_results"))));
+        makeComponent(QStringLiteral("drive"), driveObj);
+    }
 }
 
 bool DownloadApiClient::isMenuCached() const {
@@ -389,12 +603,33 @@ MenuData DownloadApiClient::parseMenuData(const QVariant& data) const {
         // Parse endpoints
         try {
             if (dataMap.contains("endpoints")) {
-                QVariant endpointsVariant = dataMap["endpoints"];
+                const QVariant endpointsVariant = dataMap["endpoints"];
+                QVariantMap endpointsMap;
+
                 if (endpointsVariant.type() == QVariant::Map) {
-                    menu.endpoints = endpointsVariant.toMap();
+                    endpointsMap = endpointsVariant.toMap();
+                } else if (endpointsVariant.type() == QVariant::List) {
+                    // Back-compat if map fields decode as repeated entries {key,value}.
+                    const QVariantList endpointsList = endpointsVariant.toList();
+                    for (const QVariant& endpointItem : endpointsList) {
+                        if (endpointItem.type() != QVariant::Map) continue;
+                        const QVariantMap entry = endpointItem.toMap();
+                        const QString key = entry.value("key").toString();
+                        const QString value = entry.value("value").toString();
+                        if (!key.isEmpty() && !value.isEmpty()) {
+                            endpointsMap[key] = value;
+                        }
+                    }
+                } else {
+                    LOG_WARN << "DownloadApiClient: 'endpoints' section has unexpected type: "
+                             << endpointsVariant.typeName();
+                }
+
+                if (!endpointsMap.isEmpty()) {
+                    menu.endpoints = endpointsMap;
                     LOG_INFO << "DownloadApiClient: Found endpoints section with " << menu.endpoints.size() << " endpoints";
                 } else {
-                    LOG_WARN << "DownloadApiClient: 'endpoints' section is not a map, got type: " << endpointsVariant.typeName();
+                    LOG_WARN << "DownloadApiClient: Endpoints present but parsed empty";
                 }
             } else {
                 LOG_WARN << "DownloadApiClient: No 'endpoints' section found in menu response";

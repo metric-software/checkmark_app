@@ -188,7 +188,13 @@ std::string UserSystemProfile::getLastUpdateTimestamp() const {
 }
 
 bool UserSystemProfile::saveToFile(const std::string& filePath) {
-  LOG_INFO << "Saving system profile to: " << filePath;
+  // Avoid logging absolute paths (may contain personal info such as usernames).
+  std::string filenameOnly = filePath;
+  size_t lastSlash = filenameOnly.find_last_of("/\\");
+  if (lastSlash != std::string::npos) {
+    filenameOnly = filenameOnly.substr(lastSlash + 1);
+  }
+  LOG_INFO << "Saving system profile to: " << filenameOnly;
 
   // Get system information
   const auto& sysInfo = GetConstantSystemInfo();

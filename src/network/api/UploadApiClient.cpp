@@ -5,6 +5,7 @@
 #include "../serialization/ProtobufSerializer.h"
 #include "../serialization/PublicExportBuilder.h"
 #include "../../logging/Logger.h"
+#include "../../ApplicationSettings.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -90,6 +91,16 @@ void UploadApiClient::pingServer(PingCallback callback) {
 
 void UploadApiClient::uploadFiles(const QStringList& filePaths, UploadCallback callback) {
     LOG_INFO << "UploadApiClient::uploadFiles called with " << filePaths.size() << " files";
+
+    if (!ApplicationSettings::getInstance().getEffectiveAutomaticDataUploadEnabled()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection/upload is disabled");
+        LOG_INFO << "Upload blocked: " << error.toStdString();
+        emit uploadError(error);
+        if (callback) callback(false, error);
+        return;
+    }
 
     if (m_uploading) {
         QString error = "Upload already in progress";

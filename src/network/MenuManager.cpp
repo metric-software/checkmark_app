@@ -31,16 +31,28 @@ void MenuManager::initialize() {
         return;
     }
     
-    LOG_INFO << "Initializing MenuManager...";
+    LOG_WARN << "Initializing MenuManager...";
     
     // Start periodic refresh timer
     m_refreshTimer->start();
+
+    // Fetch general diagnostics averages immediately at startup (independent of UI).
+    // This is used as the default "comparison slot" baseline ("Avg for all users").
+    if (m_downloadClient) {
+        m_downloadClient->prefetchGeneralDiagnostics([](bool success, const QString& error) {
+            if (success) {
+                LOG_WARN << "Startup prefetch: general diagnostics averages ready";
+            } else {
+                LOG_WARN << "Startup prefetch: general diagnostics averages failed: " << error.toStdString();
+            }
+        });
+    }
     
     // Schedule initial menu fetch with delay to allow app to fully start
     QTimer::singleShot(STARTUP_DELAY_MS, this, &MenuManager::refreshAllMenus);
     
     m_initialized = true;
-    LOG_INFO << "MenuManager initialized successfully";
+    LOG_WARN << "MenuManager initialized successfully";
 }
 
 bool MenuManager::isDiagnosticMenuCached() const {
@@ -52,7 +64,7 @@ MenuData MenuManager::getDiagnosticMenu() const {
 }
 
 void MenuManager::refreshDiagnosticMenu() {
-    LOG_INFO << "MenuManager: Refreshing diagnostic menu";
+    LOG_WARN << "MenuManager: Refreshing diagnostic menu";
     
     m_downloadClient->fetchMenu([this](bool success, const MenuData& menuData, const QString& error) {
         onDiagnosticMenuFetched(success, menuData, error);
@@ -68,7 +80,7 @@ QVariant MenuManager::getBenchmarkMenu() const {
 }
 
 void MenuManager::refreshBenchmarkMenu() {
-    LOG_INFO << "MenuManager: Refreshing benchmark menu";
+    LOG_WARN << "MenuManager: Refreshing benchmark menu";
     
     m_benchmarkClient->getBenchmarkMenu([this](bool success, const QVariant& menuData, const QString& error) {
         onBenchmarkMenuFetched(success, menuData, error);
@@ -80,8 +92,12 @@ void MenuManager::refreshAllMenus() {
         LOG_WARN << "MenuManager: Offline Mode enabled, skipping menu refresh";
         return;
     }
+    if (!ApplicationSettings::getInstance().getAllowDataCollection()) {
+        LOG_WARN << "MenuManager: Data collection disabled, skipping comparison menu refresh";
+        return;
+    }
 
-    LOG_INFO << "MenuManager: Refreshing all menus";
+    LOG_WARN << "MenuManager: Refreshing all menus";
     refreshDiagnosticMenu();
     refreshBenchmarkMenu();
 }

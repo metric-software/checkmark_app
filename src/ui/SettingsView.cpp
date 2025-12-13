@@ -69,23 +69,16 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   // Data Collection toggle
   allow_data_collection_toggle_ = new SettingsToggle(
     "allow_data_collection", "Allow data collection",
-    "Allow the application to upload your data for analysis and improvements. You can disable this to use the application in offline mode, but we cannot provide better data analysis or personalized results.",
+    "Allow downloading aggregate comparison data and uploading your benchmark/diagnostic results. Disable to keep results local and hide comparison data.",
     settings_widget);
   settings_layout->addWidget(allow_data_collection_toggle_);
 
   // Offline Mode toggle
   offline_mode_toggle_ = new SettingsToggle(
     "offline_mode", "Offline Mode",
-    "Disable all data sharing. When enabled, the app will not download remote data or upload results in the background.",
+    "Disable all network features. When enabled, the app will not check updates, fetch comparison data, or upload anything.",
     settings_widget);
   settings_layout->addWidget(offline_mode_toggle_);
-  
-  // Automatic Data Upload toggle
-  automatic_data_upload_toggle_ = new SettingsToggle(
-    "automatic_data_upload", "Automatic Data Upload",
-    "Automatically upload benchmark and diagnostic data in the background when runs finish. Disable to keep results local unless Offline Mode is enabled.",
-    settings_widget);
-  settings_layout->addWidget(automatic_data_upload_toggle_);
   
   // Add space between categories
   settings_layout->addSpacing(25);
@@ -133,24 +126,20 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   bool allow_data_collection = app_settings_instance.getAllowDataCollection();
   bool offline_mode_enabled = app_settings_instance.isOfflineModeEnabled();
   bool detailed_logs_enabled = app_settings_instance.getDetailedLogsEnabled();
-  bool automatic_data_upload_enabled = app_settings_instance.getAutomaticDataUploadEnabled();
   // Set toggle states (using setEnabled as per existing pattern for
   // SettingsToggle)
   experimental_features_toggle_->setEnabled(experimental_enabled);
   console_visibility_toggle_->setEnabled(console_visible);
   elevated_priority_toggle_->setEnabled(elevated_priority);
   validate_metrics_on_startup_toggle_->setEnabled(validate_metrics_on_startup);
-  allow_data_collection_toggle_->setEnabled(allow_data_collection);
+  // If Offline Mode is enabled, force data collection off in the UI as it's overridden.
+  allow_data_collection_toggle_->setEnabled(offline_mode_enabled ? false : allow_data_collection);
   offline_mode_toggle_->setEnabled(offline_mode_enabled);
   detailed_logs_toggle_->setEnabled(detailed_logs_enabled);
-  automatic_data_upload_toggle_->setEnabled(automatic_data_upload_enabled);
   // Show dependent toggles as greyed out when offline overrides them
   if (offline_mode_enabled) {
     if (allow_data_collection_toggle_) {
       allow_data_collection_toggle_->setDisabledStyle(true);
-    }
-    if (automatic_data_upload_toggle_) {
-      automatic_data_upload_toggle_->setDisabledStyle(true);
     }
     if (check_updates_button_) {
       check_updates_button_->setEnabled(false);
@@ -171,8 +160,6 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
           &SettingsView::OnOfflineModeChanged);
   connect(detailed_logs_toggle_, &SettingsToggle::stateChanged, this,
           &SettingsView::OnDetailedLogsChanged);
-  connect(automatic_data_upload_toggle_, &SettingsToggle::stateChanged, this,
-          &SettingsView::OnAutomaticDataUploadChanged);
   settings_layout->addSpacing(20);
   
   // Reset Settings and Delete Data buttons (first section)
@@ -655,10 +642,7 @@ void SettingsView::OnResetSettingsClicked() {
       offline_mode_toggle_->setDisabledStyle(false);
     }
     detailed_logs_toggle_->setEnabled(false);  // Default to false
-    automatic_data_upload_toggle_->setEnabled(true);  // Default to true
-    if (automatic_data_upload_toggle_) {
-      automatic_data_upload_toggle_->setDisabledStyle(false);
-    }
+    // Automatic upload toggle removed; uploads are governed by Allow Data Collection.
     if (check_updates_button_) {
       check_updates_button_->setEnabled(true);
     }
@@ -866,10 +850,6 @@ void SettingsView::saveSettings() {
     settings.setDetailedLogsEnabled(detailed_logs_toggle_->isEnabled());
   }
 
-  if (automatic_data_upload_toggle_) {
-    settings.setAutomaticDataUploadEnabled(automatic_data_upload_toggle_->isEnabled());
-  }
-
   // Instead of using saveSettings(), directly save to settings file
   // This is typically done automatically when setting values in
   // ApplicationSettings but we can force a save here by writing settings to
@@ -888,8 +868,6 @@ void SettingsView::saveSettings() {
                        settings.isOfflineModeEnabled());
   appSettings.setValue("DetailedLogs",
                        settings.getDetailedLogsEnabled());
-  appSettings.setValue("AutomaticDataUpload",
-                       settings.getAutomaticDataUploadEnabled());
   appSettings.sync();  // Ensure settings are written to disk
 }
 
@@ -1093,7 +1071,7 @@ void SettingsView::OnDeleteAllDataClicked() {
     validate_metrics_on_startup_toggle_->setEnabled(true);  // Default to true
     allow_data_collection_toggle_->setEnabled(true);  // Default to true
     detailed_logs_toggle_->setEnabled(false);  // Default to false
-    automatic_data_upload_toggle_->setEnabled(true);  // Default to true
+    // Automatic upload toggle removed; uploads are governed by Allow Data Collection.
 
     // Show confirmation with a custom silent dialog
     QDialog infoDialog(this);
@@ -1166,12 +1144,13 @@ void SettingsView::OnOfflineModeChanged(const QString& id, bool enabled) {
   ApplicationSettings& settings = ApplicationSettings::getInstance();
   settings.setOfflineModeEnabled(enabled);
 
-  // Grey-out dependent data sharing toggles while offline overrides them
+  // Offline Mode overrides data collection: force it off and grey it out.
   if (allow_data_collection_toggle_) {
+    if (enabled) {
+      allow_data_collection_toggle_->setEnabled(false);
+      settings.setAllowDataCollection(false);
+    }
     allow_data_collection_toggle_->setDisabledStyle(enabled);
-  }
-  if (automatic_data_upload_toggle_) {
-    automatic_data_upload_toggle_->setDisabledStyle(enabled);
   }
 
   // Disable update checks when offline
@@ -1372,9 +1351,4 @@ void SettingsView::OnUpdateCheckStarted() {
     check_updates_button_->setEnabled(false);
     check_updates_button_->setText("Checking...");
   }
-}
-
-void SettingsView::OnAutomaticDataUploadChanged(const QString& id, bool enabled) {
-  // Save the setting
-  ApplicationSettings::getInstance().setAutomaticDataUploadEnabled(enabled);
 }

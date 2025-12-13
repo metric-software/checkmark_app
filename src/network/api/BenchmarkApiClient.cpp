@@ -3,6 +3,7 @@
 #include "../serialization/BinarySerializer.h"
 #include "../serialization/JsonSerializer.h"
 #include "../utils/RequestBuilder.h"
+#include "../../ApplicationSettings.h"
 #include "../../logging/Logger.h"
 #include <QCryptographicHash>
 // Generated protobufs
@@ -22,6 +23,14 @@ BenchmarkApiClient::BenchmarkApiClient(QObject* parent)
 }
 
 void BenchmarkApiClient::uploadBenchmark(const QVariant& uploadRequestVariant, BenchUploadCb cb) {
+    if (!ApplicationSettings::getInstance().getEffectiveAutomaticDataUploadEnabled()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection/upload is disabled");
+        LOG_INFO << "BenchmarkApiClient: Upload blocked: " << error.toStdString();
+        cb(false, error, QString());
+        return;
+    }
     // If QVariant holds QByteArray (already-encoded protobuf), switch serializer
     if (uploadRequestVariant.canConvert<QByteArray>()) {
         setSerializer(std::make_shared<BinarySerializer>());
@@ -43,6 +52,14 @@ void BenchmarkApiClient::uploadBenchmark(const QVariant& uploadRequestVariant, B
 }
 
 void BenchmarkApiClient::getPublicRun(const QString& runId, PublicRunCb cb) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "BenchmarkApiClient: Public run fetch blocked: " << error.toStdString();
+        cb(false, QVariant(), error);
+        return;
+    }
     // GET /pb/benchmarks/run?id=<run_id>
     RequestBuilder b;
     b.setMethod(HttpMethod::GET).setPath(QString::fromLatin1(kPublicRunPath)).addQueryParam("id", runId);
@@ -57,6 +74,14 @@ void BenchmarkApiClient::getPublicRun(const QString& runId, PublicRunCb cb) {
 }
 
 void BenchmarkApiClient::getBenchmarkMenu(MenuCb cb) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "BenchmarkApiClient: Menu fetch blocked: " << error.toStdString();
+        cb(false, QVariant(), error);
+        return;
+    }
     // cache menu briefly client-side (MenuManager has its own 5min refresh cadence); use 60s here
     RequestBuilder b; b.setMethod(HttpMethod::GET).setPath(QString::fromLatin1(kMenuPath));
     constexpr int kTTL = 60;
@@ -67,6 +92,14 @@ void BenchmarkApiClient::getBenchmarkMenu(MenuCb cb) {
 }
 
 void BenchmarkApiClient::getBenchmarkAggregates(PublicRunCb cb) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "BenchmarkApiClient: Aggregates fetch blocked: " << error.toStdString();
+        cb(false, QVariant(), error);
+        return;
+    }
     // Aggregates endpoint is JSON-only
     setSerializer(std::make_shared<JsonSerializer>());
     RequestBuilder b;
@@ -78,6 +111,14 @@ void BenchmarkApiClient::getBenchmarkAggregates(PublicRunCb cb) {
 }
 
 void BenchmarkApiClient::queryLeaderboard(const QVariantMap& query, LeaderboardCb cb) {
+    if (!ApplicationSettings::getInstance().getEffectiveAllowDataCollection()) {
+        QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
+            ? QStringLiteral("Offline mode is enabled")
+            : QStringLiteral("Data collection is disabled");
+        LOG_INFO << "BenchmarkApiClient: Leaderboard query blocked: " << error.toStdString();
+        cb(false, QVariant(), error);
+        return;
+    }
     // Build LeaderboardQuery protobuf from QVariantMap { mode: string, filters: [{key,value}] }
     checkmark::benchmarks::LeaderboardQuery qpb;
     QString modeStr = query.value(QStringLiteral("mode")).toString();

@@ -608,8 +608,10 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
             allBars.append(gameBars);
             
             // Create display name
-            QString displayName = componentName + " (" +
-              (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
+            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+              ? componentName
+              : componentName + " (" +
+                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "CPUResultRenderer: Updating comparison bars with fetched data";
             
@@ -664,7 +666,24 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
                         delete child;
                       }
                       
-                      // Create a basic comparison bar (50% width for now)
+                      // Scale comparison using the same maxValue as the user's bar for this test
+                      double maxValue = 0.0;
+                      const QString obj = bar->objectName();
+                      if (obj == "comparison_bar_single_core") maxValue = singleCoreVals.second;
+                      else if (obj == "comparison_bar_four_thread") maxValue = fourThreadVals.second;
+                      else if (obj == "comparison_bar_scalar") maxValue = simdScalarVals.second;
+                      else if (obj == "comparison_bar_avx") maxValue = simdAvxVals.second;
+                      else if (obj == "comparison_bar_prime") maxValue = primeTimeVals.second;
+                      else if (obj == "comparison_bar_small") maxValue = gameSimSmallVals.second / 1000000.0;
+                      else if (obj == "comparison_bar_medium") maxValue = gameSimMediumVals.second / 1000000.0;
+                      else if (obj == "comparison_bar_large") maxValue = gameSimLargeVals.second / 1000000.0;
+                      else if (obj == "comparison_bar_cold_start") maxValue = coldStartVals.second;
+
+                      const double scaledMaxValue = maxValue * 1.25;
+                      const int percentage = (test.value <= 0 || scaledMaxValue <= 0)
+                        ? 0
+                        : static_cast<int>(std::min(100.0, (test.value / scaledMaxValue) * 100.0));
+
                       QWidget* barWidget = new QWidget();
                       barWidget->setFixedHeight(16);
                       barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
@@ -674,8 +693,8 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
                       
                       QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
                       if (newLayout) {
-                        newLayout->addWidget(barWidget, 50);
-                        newLayout->addWidget(spacer, 50);
+                        newLayout->addWidget(barWidget, percentage);
+                        newLayout->addWidget(spacer, 100 - percentage);
                       }
                     }
                     break;
@@ -848,10 +867,10 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
         : 0;
 
     // Create display name with aggregation type
-    QString displayName =
-      componentName + " (" +
-      (type == DiagnosticViewComponents::AggregationType::Best ? "Best)"
-                                                               : "Avg)");
+    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+      ? componentName
+      : componentName + " (" +
+          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
 
     // Update the CPU name in the boost section
     if (compCpuLabel) {
@@ -1336,6 +1355,12 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     comparisonData = loadCPUComparisonData();
   }
 
+  if (downloadClient) {
+    CPUComparisonData general;
+    general.model = DownloadApiClient::generalAverageLabel();
+    comparisonData[DownloadApiClient::generalAverageLabel()] = general;
+  }
+
   // Add to grid layout
   basicLayout->addWidget(headerWidget, 0, 0, 1, 3);
 
@@ -1535,6 +1560,14 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     fourThreadVals, simdScalarVals, simdAvxVals, primeTimeVals,
     gameSimSmallVals, gameSimMediumVals, gameSimLargeVals, coldStartVals,
     downloadClient);
+  dropdown->setObjectName("cpu_comparison_dropdown");
+
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) {
+      dropdown->setCurrentIndex(idx);
+    }
+  }
 
   // Add dropdown to header layout, aligned to the right
   headerLayout->addStretch(1);
@@ -1950,8 +1983,10 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
             }
             
             // Create display name
-            QString displayName = componentName + " (" +
-              (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
+            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+              ? componentName
+              : componentName + " (" +
+                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "CPUResultRenderer (Cache): Updating cache comparison bars with fetched data";
             
@@ -2094,10 +2129,10 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
     }
 
     // Create display name with aggregation type
-    QString displayName =
-      componentName + " (" +
-      (type == DiagnosticViewComponents::AggregationType::Best ? "Best)"
-                                                               : "Avg)");
+    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+      ? componentName
+      : componentName + " (" +
+          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
 
     // Update cache latency bars
     QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
@@ -2183,6 +2218,13 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
   QComboBox* dropdown =
     DiagnosticViewComponents::createAggregatedComparisonDropdown<
       CPUComparisonData>(aggregatedData, selectionCallback);
+  dropdown->setObjectName("cpu_cache_comparison_dropdown");
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) {
+      dropdown->setCurrentIndex(idx);
+    }
+  }
 
   headerLayout->addWidget(dropdown);
 

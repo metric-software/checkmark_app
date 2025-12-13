@@ -89,13 +89,20 @@ QComboBox* createAggregatedComparisonDropdown(
   QComboBox* dropdown = new QComboBox();
   dropdown->addItem("Select component for comparison...");
 
+  const QString generalLabel = QStringLiteral("Avg for all users");
+  if (aggregatedData.find(generalLabel) != aggregatedData.end()) {
+    dropdown->addItem(generalLabel, QVariant("general:" + generalLabel));
+  }
+
   // First add all "Best" entries
   for (const auto& [name, data] : aggregatedData) {
+    if (name == generalLabel) continue;
     dropdown->addItem(name + " (Best)", QVariant("best:" + name));
   }
 
   // Then add all "Average" entries
   for (const auto& [name, data] : aggregatedData) {
+    if (name == generalLabel) continue;
     dropdown->addItem(name + " (Avg)", QVariant("avg:" + name));
   }
 
@@ -150,6 +157,7 @@ QComboBox* createAggregatedComparisonDropdown(
   AggregationType type = AggregationType::Average;  // Default
   if (typeStr == "avg") type = AggregationType::Average;
   else if (typeStr == "best") type = AggregationType::Best;
+  else if (typeStr == "general") type = AggregationType::Average;
 
       // Find the component data
       if (aggregatedData.find(componentName) != aggregatedData.end()) {

@@ -28,6 +28,15 @@ ApplicationSettings::ApplicationSettings()
   // Log settings location
   LOG_INFO << "Settings file: [path hidden for privacy]";
   LOG_INFO << "Profiles directory: [path hidden for privacy]";
+
+  // Ensure Offline Mode remains the highest hierarchy setting.
+  // If Offline Mode is enabled, force data collection off so persisted state
+  // and UI stay consistent across versions.
+  if (isOfflineModeEnabled() && getAllowDataCollection()) {
+    settings.setValue("Privacy/AllowDataCollection", false);
+    settings.setValue("Features/AutomaticDataUploadEnabled", false);
+    settings.sync();
+  }
 }
 
 QString ApplicationSettings::getSettingsFilePath() const {
@@ -188,6 +197,14 @@ bool ApplicationSettings::isOfflineModeEnabled() const {
 
 void ApplicationSettings::setOfflineModeEnabled(bool enabled) {
   settings.setValue("Network/OfflineModeEnabled", enabled);
+
+  // Offline Mode is a "higher hierarchy" setting: when enabled, disable data
+  // collection as well so the UI and persisted state stay consistent.
+  if (enabled) {
+    settings.setValue("Privacy/AllowDataCollection", false);
+    // Keep legacy setting in sync for older codepaths (UI no longer exposes it).
+    settings.setValue("Features/AutomaticDataUploadEnabled", false);
+  }
   settings.sync();  // Force write to disk immediately
 }
 
@@ -240,6 +257,10 @@ bool ApplicationSettings::areRemoteFeatureFlagsInitialized() const {
   return remoteFlagsInitialized_;
 }
 
+bool ApplicationSettings::getEffectiveAllowDataCollection() const {
+  return !isOfflineModeEnabled() && getAllowDataCollection();
+}
+
 bool ApplicationSettings::getEffectiveExperimentalFeaturesEnabled() const {
   // Developer bypass: ignore remote flags and backend status, but still
   // respect the local user preference for experimental features.
@@ -261,23 +282,21 @@ bool ApplicationSettings::getEffectiveAutomaticDataUploadEnabled() const {
     return false;
   }
 
-  // Respect the privacy toggle even though uploads are now automatic.
+  // Respect the data collection toggle for all uploads (automatic and manual).
   if (!getAllowDataCollection()) {
     return false;
   }
 
-  const bool automaticPreference = getAutomaticDataUploadEnabled();
-
   // Developer bypass: ignore remote flags/backend status but still respect
-  // the local automatic upload preference.
+  // the local privacy toggle.
   if (developerBypassEnabled_) {
-    return automaticPreference;
+    return true;
   }
 
   // If remote flags have not yet been fetched, fall back to the local
   // preference so uploads can proceed by default.
   if (!remoteFlagsInitialized_) {
-    return automaticPreference;
+    return true;
   }
-  return automaticPreference && remoteUploadAllowed_;
+  return remoteUploadAllowed_;
 }

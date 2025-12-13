@@ -47,7 +47,6 @@ class SettingsView : public QWidget {
   void OnDataCollectionChanged(const QString& id, bool enabled);
   void OnOfflineModeChanged(const QString& id, bool enabled);
   void OnDetailedLogsChanged(const QString& id, bool enabled);
-  void OnAutomaticDataUploadChanged(const QString& id, bool enabled);
   void OnOpenAppDataLocation();
   void OnGDPRClicked();
   void OnRequestDataClicked();
@@ -77,7 +76,6 @@ class SettingsView : public QWidget {
   SettingsToggle* allow_data_collection_toggle_ = nullptr;
   SettingsToggle* offline_mode_toggle_ = nullptr;
   SettingsToggle* detailed_logs_toggle_ = nullptr;
-  SettingsToggle* automatic_data_upload_toggle_ = nullptr;
   QPushButton* appdata_button_ = nullptr;
   QPushButton* reset_settings_button_ = nullptr;
   QPushButton* delete_all_data_button_ = nullptr;

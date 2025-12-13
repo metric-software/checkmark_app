@@ -415,6 +415,22 @@ QWidget* MemoryResultRenderer::processMemoryData(
     comparisonData = loadMemoryComparisonData();
   }
 
+  if (downloadClient) {
+    MemoryComparisonData general{};
+    general.type = DownloadApiClient::generalAverageLabel();
+    general.totalMemoryGB = 0;
+    general.frequencyMHz = 0;
+    general.channelStatus = "";
+    general.xmpEnabled = false;
+    general.bandwidthMBs = 0;
+    general.latencyNs = 0;
+    general.readTimeGBs = 0;
+    general.writeTimeGBs = 0;
+    general.moduleCount = 0;
+    general.moduleCapacityGB = 0;
+    comparisonData[DownloadApiClient::generalAverageLabel()] = general;
+  }
+
   // Create a title and dropdown section with horizontal layout
   QWidget* headerWidget = new QWidget();
   QHBoxLayout* headerLayout = new QHBoxLayout(headerWidget);
@@ -545,6 +561,11 @@ QWidget* MemoryResultRenderer::processMemoryData(
   QComboBox* dropdown = createMemoryComparisonDropdown(
     comparisonData, memMetricsWidget, bandwidthVals, latencyVals, readSpeedVals,
     writeSpeedVals, downloadClient);
+  dropdown->setObjectName("memory_comparison_dropdown");
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) dropdown->setCurrentIndex(idx);
+  }
 
   titleLayout->addWidget(dropdown);
   memMetricsLayout->addWidget(titleWidget, 1, 0, 1, 2);
@@ -1190,8 +1211,10 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
               QRegularExpression("^comparison_bar_"));
             
             // Create display name
-            QString displayName = componentName + " (" +
-              (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
+            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+              ? componentName
+              : componentName + " (" +
+                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "MemoryResultRenderer: Updating comparison bars with fetched data";
             
@@ -1341,10 +1364,10 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
     };
 
     // Create display name with aggregation type
-    QString displayName =
-      componentName + " (" +
-      (type == DiagnosticViewComponents::AggregationType::Best ? "Best)"
-                                                               : "Avg)");
+    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
+      ? componentName
+      : componentName + " (" +
+          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
 
     std::vector<TestData> tests = {
       {"comparison_bar_bandwidth", memData.bandwidthMBs / 1024.0,

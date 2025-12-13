@@ -13,6 +13,9 @@ public:
     static MenuManager& getInstance();
     
     void initialize();
+
+    // Access to the underlying diagnostics API client (shared singleton-owned instance).
+    DownloadApiClient* diagnosticApiClient() const { return m_downloadClient; }
     
     // Diagnostic menu access
     bool isDiagnosticMenuCached() const;

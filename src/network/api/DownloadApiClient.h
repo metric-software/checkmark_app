@@ -10,6 +10,7 @@
 #include "BaseApiClient.h"
 #include <QStringList>
 #include <QJsonObject>
+#include <QDateTime>
 
 struct ComponentData {
     QString componentName;
@@ -27,6 +28,7 @@ struct MenuData {
 
 using MenuCallback = std::function<void(bool success, const MenuData& data, const QString& error)>;
 using ComponentCallback = std::function<void(bool success, const ComponentData& data, const QString& error)>;
+using GeneralCallback = std::function<void(bool success, const QString& error)>;
 
 class DownloadApiClient : public BaseApiClient {
     Q_OBJECT
@@ -36,6 +38,11 @@ public:
     
     void fetchMenu(MenuCallback callback);
     void fetchComponentData(const QString& componentType, const QString& modelName, ComponentCallback callback);
+
+    // Prefetches and caches aggregated cross-user diagnostics averages.
+    void prefetchGeneralDiagnostics(GeneralCallback callback = nullptr);
+
+    static QString generalAverageLabel() { return QStringLiteral("Avg for all users"); }
     
     // Cache access
     bool isMenuCached() const;
@@ -51,9 +58,19 @@ signals:
 private:
     MenuData m_cachedMenu;
     bool m_menuCached;
+
+    // General (cross-user aggregate) cache
+    bool m_generalCached = false;
+    bool m_generalFetchInFlight = false;
+    QDateTime m_generalFetchedAtUtc;
+    QJsonObject m_generalMeta;
+    QMap<QString, ComponentData> m_generalComponents; // cpu/gpu/memory/drive (+ future)
+    QList<GeneralCallback> m_generalWaiters;
     
     MenuData parseMenuData(const QVariant& data) const;
     ComponentData parseComponentData(const QVariant& data) const;
+    void ensureGeneralDiagnosticsReady(GeneralCallback callback);
+    void parseAndCacheGeneralDiagnostics(const QVariant& data);
     QString generateComponentCacheKey(const QString& componentType, const QString& modelName) const;
 };
 

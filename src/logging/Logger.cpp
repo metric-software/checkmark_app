@@ -34,6 +34,14 @@ void Logger::init(const std::string& logPath, const std::string& crashPath,
     return; // Already initialized
   }
 
+  auto basenameOnly = [](const std::string& path) -> std::string {
+    size_t lastSlash = path.find_last_of("/\\");
+    if (lastSlash == std::string::npos) {
+      return path;
+    }
+    return path.substr(lastSlash + 1);
+  };
+
   setLevel(level);
   maxQueueSize_ = maxQueue;
   
@@ -42,7 +50,8 @@ void Logger::init(const std::string& logPath, const std::string& crashPath,
     std::lock_guard<std::mutex> fileLock(fileMutex_);
     fileSink_.open(logPath, std::ios::out | std::ios::app);
     if (!fileSink_.is_open()) {
-      std::cerr << "Failed to open log file: " << logPath << std::endl;
+      // Avoid printing absolute paths (may contain personal info such as usernames).
+      std::cerr << "Failed to open log file: " << basenameOnly(logPath) << std::endl;
     }
   }
   
@@ -50,7 +59,8 @@ void Logger::init(const std::string& logPath, const std::string& crashPath,
     std::lock_guard<std::mutex> fileLock(fileMutex_);
     crashFileSink_.open(crashPath, std::ios::out | std::ios::app);
     if (!crashFileSink_.is_open()) {
-      std::cerr << "Failed to open crash log file: " << crashPath << std::endl;
+      // Avoid printing absolute paths (may contain personal info such as usernames).
+      std::cerr << "Failed to open crash log file: " << basenameOnly(crashPath) << std::endl;
     }
   }
   

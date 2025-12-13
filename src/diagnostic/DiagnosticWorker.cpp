@@ -2775,20 +2775,8 @@ void DiagnosticWorker::stopPdhMetricsCollection() {
   void DiagnosticWorker::performAutomaticUpload() {
     try {
       ApplicationSettings& settings = ApplicationSettings::getInstance();
-    if (settings.isOfflineModeEnabled()) {
-      LOG_INFO << "Offline mode enabled, skipping automatic diagnostic upload";
-      return;
-    }
-
-    // Check if data collection is allowed (prerequisite)
-    if (!settings.getAllowDataCollection()) {
-      LOG_INFO << "Data collection is disabled, skipping automatic upload";
-      return;
-    }
-
-    // Check if automatic upload is enabled
     if (!settings.getEffectiveAutomaticDataUploadEnabled()) {
-      LOG_INFO << "Automatic data upload is disabled";
+      LOG_INFO << "Diagnostic upload disabled by settings (offline mode, data collection, or backend flags)";
       return;
     }
 

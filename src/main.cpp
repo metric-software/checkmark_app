@@ -38,6 +38,7 @@
 #include "logging/Logger.h"
 #include "network/MenuManager.h"
 #include "network/core/FeatureToggleManager.h"
+#include "network/utils/NetworkResponseCleanup.h"
 
 static const char* logLevelName(LogLevel level) {
   switch (level) {
@@ -270,6 +271,12 @@ int main(int argc, char* argv[])
     std::make_unique<QApplication>(argc, argv);
   app->setApplicationDisplayName("checkmark");
 
+  // Always clear response dump artifacts from previous runs.
+  // This runs before any network calls can emit new dumps, and is intentionally strict
+  // about what it deletes (only known dump files under <exeDir>/network_responses).
+  const NetworkResponseCleanupStats networkDumpCleanupStats =
+    clearNetworkResponsesDirectoryOnStartup();
+
   // Ensure we have initial backups for all settings types
   // optimizations::BackupManager::GetInstance().Initialize();
   // optimizations::BackupManager::GetInstance().CreateInitialBackups();
@@ -408,6 +415,17 @@ int main(int argc, char* argv[])
          LOG_INFO << "Legacy logging system kept as backup";
          LOG_INFO << "[startup] Logger initialized (level="
                   << logLevelName(logLevel) << ")";
+         if (!networkDumpCleanupStats.error.isEmpty()) {
+           LOG_WARN << "[startup] network_responses cleanup skipped: "
+                    << networkDumpCleanupStats.error.toStdString()
+                    << " dir=" << networkDumpCleanupStats.directory.toStdString();
+         } else {
+           LOG_INFO << "[startup] network_responses cleanup: deleted="
+                    << networkDumpCleanupStats.deleted
+                    << " skipped=" << networkDumpCleanupStats.skipped
+                    << " failed=" << networkDumpCleanupStats.failed
+                    << " dir=" << networkDumpCleanupStats.directory.toStdString();
+         }
          }
        }
 
