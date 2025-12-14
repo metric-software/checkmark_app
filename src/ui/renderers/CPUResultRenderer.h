@@ -87,8 +87,6 @@ class CPUResultRenderer {
                                    const QString& color);
   static QWidget* createLatencyBar(const QString& label, double value,
                                    const QString& color);
-  static QWidget* createDetailedLatencyTable(
-    const QMap<int, double>& cacheLatencies, int l2CacheKB, int l3CacheKB);
 
   // New helpers for comparison functionality
   static QWidget* createComparisonPerformanceBar(

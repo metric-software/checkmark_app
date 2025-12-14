@@ -11,7 +11,6 @@
 #include <QJsonObject>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QTextEdit>
 #include <QVBoxLayout>
 
 #include "DiagnosticViewComponents.h"
@@ -211,52 +210,7 @@ QString MemoryResultRenderer::getMemoryPerformanceRecommendation(
   return recommendation;
 }
 
-QWidget* MemoryResultRenderer::createRawDataWidget(const QString& result) {
-  QWidget* rawDataContainer = new QWidget();
-  QVBoxLayout* rawDataLayout = new QVBoxLayout(rawDataContainer);
-  // Set a solid background color for the container
-  rawDataContainer->setStyleSheet(
-    "background-color: #252525; border-radius: 4px;");
-
-  QPushButton* showRawDataBtn = new QPushButton("▼ Show Raw Data");
-  showRawDataBtn->setStyleSheet(R"(
-        QPushButton {
-            color: #0078d4;
-            border: none;
-            text-align: left;
-            padding: 4px;
-            font-size: 12px;
-            background-color: #252525;
-        }
-        QPushButton:hover {
-            color: #1084d8;
-            text-decoration: underline;
-        }
-    )");
-
-  QTextEdit* rawDataText = new QTextEdit();
-  rawDataText->setReadOnly(true);
-  rawDataText->setFixedHeight(150);
-  rawDataText->setText(result);
-  rawDataText->setStyleSheet(
-    "background-color: #1e1e1e; color: #dddddd; border: 1px solid #333333;");
-  rawDataText->hide();
-
-  // Connect with captured variables for lambda
-  QObject::connect(
-    showRawDataBtn, &QPushButton::clicked, [showRawDataBtn, rawDataText]() {
-      bool visible = rawDataText->isVisible();
-      rawDataText->setVisible(!visible);
-      showRawDataBtn->setText(visible ? "▼ Show Raw Data" : "▲ Hide Raw Data");
-    });
-
-  rawDataLayout->addWidget(showRawDataBtn);
-  rawDataLayout->addWidget(rawDataText);
-
-  return rawDataContainer;
-}
-
-QWidget* MemoryResultRenderer::createMemoryResultWidget(const QString& result, const MenuData* networkMenuData, DownloadApiClient* downloadClient) {
+QWidget* MemoryResultRenderer::createMemoryResultWidget(const QString& /*result*/, const MenuData* networkMenuData, DownloadApiClient* downloadClient) {
   LOG_INFO << "MemoryResultRenderer: Creating memory result widget with network support";
   // Get memory data directly from the DiagnosticDataStore
   const auto& dataStore = DiagnosticDataStore::getInstance();
@@ -264,9 +218,6 @@ QWidget* MemoryResultRenderer::createMemoryResultWidget(const QString& result, c
 
   // Create the widget with the memory data
   QWidget* widget = processMemoryData(memData, networkMenuData, downloadClient);
-
-  // Add raw data section at the bottom
-  QWidget* rawDataWidget = createRawDataWidget(result);
 
   // Create a container for all content
   QWidget* containerWidget = new QWidget();
@@ -278,7 +229,6 @@ QWidget* MemoryResultRenderer::createMemoryResultWidget(const QString& result, c
   layout->setSpacing(0);  // Remove spacing between widgets to close the gap
 
   layout->addWidget(widget);
-  layout->addWidget(rawDataWidget);
 
   return containerWidget;
 }
@@ -417,7 +367,7 @@ QWidget* MemoryResultRenderer::processMemoryData(
 
   if (downloadClient) {
     MemoryComparisonData general{};
-    general.type = DownloadApiClient::generalAverageLabel();
+    general.model = DownloadApiClient::generalAverageLabel();
     general.totalMemoryGB = 0;
     general.frequencyMHz = 0;
     general.channelStatus = "";
@@ -1038,6 +988,7 @@ std::map<QString, MemoryComparisonData> MemoryResultRenderer::
         QJsonObject rootObj = doc.object();
 
         MemoryComparisonData mem;
+        mem.model = rootObj.value("model").toString();
         mem.type = rootObj["type"].toString();
         mem.totalMemoryGB = rootObj["total_memory_gb"].toDouble();
         mem.frequencyMHz = 0;
@@ -1127,38 +1078,41 @@ std::map<QString, MemoryComparisonData> MemoryResultRenderer::
           }
         }
 
-        // Create a more descriptive display name - no longer include memory size
-        QString displayName;
-        // Include only type and frequency
-        displayName = QString("%1").arg(mem.type);
+        if (mem.model.isEmpty()) {
+          // Create a descriptive display name for local JSON (no backend model).
+          QString displayName = QString("%1").arg(mem.type);
 
-        // Add frequency if we have it
-        if (mem.frequencyMHz > 0) {
-          displayName += QString(" %1MHz").arg(mem.frequencyMHz);
-        } else {
-          displayName += " (Unknown MHz)";
-        }
-
-        // Add channel status to make the name more descriptive
-        if (!mem.channelStatus.isEmpty()) {
-          // Simplify channel status for the display
-          if (mem.channelStatus.contains("Dual Channel", Qt::CaseInsensitive)) {
-            displayName += " Dual Channel";
-          } else if (mem.channelStatus.contains("Single Channel",
-                                                Qt::CaseInsensitive)) {
-            displayName += " Single Channel";
-          } else if (mem.channelStatus.contains("Quad Channel",
-                                                Qt::CaseInsensitive)) {
-            displayName += " Quad Channel";
+          // Add frequency if we have it
+          if (mem.frequencyMHz > 0) {
+            displayName += QString(" %1MHz").arg(mem.frequencyMHz);
           } else {
-            displayName += " " + mem.channelStatus;
+            displayName += " (Unknown MHz)";
           }
+
+          // Add channel status to make the name more descriptive
+          if (!mem.channelStatus.isEmpty()) {
+            // Simplify channel status for the display
+            if (mem.channelStatus.contains("Dual Channel", Qt::CaseInsensitive)) {
+              displayName += " Dual Channel";
+            } else if (mem.channelStatus.contains("Single Channel",
+                                                  Qt::CaseInsensitive)) {
+              displayName += " Single Channel";
+            } else if (mem.channelStatus.contains("Quad Channel",
+                                                  Qt::CaseInsensitive)) {
+              displayName += " Quad Channel";
+            } else {
+              displayName += " " + mem.channelStatus;
+            }
+          }
+
+          // Add XMP status
+          displayName += mem.xmpEnabled ? " (XMP)" : "";
+          mem.model = displayName;
         }
 
-        // Add XMP status
-        displayName += mem.xmpEnabled ? " (XMP)" : "";
-
-        comparisonData[displayName] = mem;
+        if (!mem.model.isEmpty()) {
+          comparisonData[mem.model] = mem;
+        }
       }
 
       file.close();
@@ -1537,28 +1491,26 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<MemoryCompar
                       MemoryComparisonData>>
     result;
 
-  // Group results by memory type and frequency only, ignoring total capacity
+  // Group results by the backend-provided memory kit name (CPU-style).
   std::map<QString, std::vector<std::pair<QString, MemoryComparisonData>>>
     groupedData;
 
   for (const auto& [id, data] : individualData) {
-    // Create a key that uniquely identifies this type of memory kit
-    // Only use type and frequency - removed total memory size from key
-    QString kitKey = QString("%1 %2MHz").arg(data.type).arg(data.frequencyMHz);
+    const QString modelName = !data.model.isEmpty() ? data.model : id;
 
     // Add to the corresponding group
-    groupedData[kitKey].push_back({id, data});
+    groupedData[modelName].push_back({id, data});
   }
 
-  // Create aggregated data for each memory kit type
-  for (const auto& [kitName, dataList] : groupedData) {
+  // Create aggregated data for each memory kit model
+  for (const auto& [modelName, dataList] : groupedData) {
     DiagnosticViewComponents::AggregatedComponentData<MemoryComparisonData>
       aggregated;
-    aggregated.componentName = kitName;
+    aggregated.componentName = modelName;
     if (!dataList.empty()) {
       // Preserve the original full identifier from the first entry (menu key)
       aggregated.originalFullName = dataList[0].first;
-      LOG_INFO << "MemoryResultRenderer: Aggregated '" << kitName.toStdString()
+      LOG_INFO << "MemoryResultRenderer: Aggregated '" << modelName.toStdString()
                << "' originalFullName='" << aggregated.originalFullName.toStdString() << "'";
     }
 
@@ -1567,6 +1519,8 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<MemoryCompar
       const auto& firstData = dataList[0].second;
       aggregated.bestResult = firstData;
       aggregated.averageResult = firstData;
+      aggregated.bestResult.model = modelName;
+      aggregated.averageResult.model = modelName;
 
       // Add all individual results
       for (const auto& [id, data] : dataList) {
@@ -1627,15 +1581,6 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<MemoryCompar
       aggregated.averageResult.readTimeGBs = sumReadTimeGBs / count;
       aggregated.averageResult.writeTimeGBs = sumWriteTimeGBs / count;
 
-      // Copy memory kit info from first result (these should be the same for
-      // all runs of the same kit type)
-      aggregated.bestResult.type = kitName.split(' ').at(0);
-      aggregated.bestResult.frequencyMHz = firstData.frequencyMHz;
-
-      // Same for average result
-      aggregated.averageResult.type = kitName.split(' ').at(0);
-      aggregated.averageResult.frequencyMHz = firstData.frequencyMHz;
-
       // For channel status and XMP, use the most common configuration
       std::map<QString, int> channelCounts;
       std::map<bool, int> xmpCounts;
@@ -1671,7 +1616,7 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<MemoryCompar
     }
 
     // Add to the result map
-    result[kitName] = aggregated;
+    result[modelName] = aggregated;
   }
 
   return result;
@@ -1690,7 +1635,18 @@ MemoryComparisonData MemoryResultRenderer::convertNetworkDataToMemory(const Comp
   
   // Parse the testData which contains the full JSON structure
   QJsonObject rootData = networkData.testData;
-  
+
+  mem.model = !networkData.componentName.isEmpty()
+    ? networkData.componentName
+    : rootData.value("model").toString();
+  mem.type = rootData.value("type").toString();
+  mem.frequencyMHz = rootData.value("frequency_mhz").toInt();
+  mem.channelStatus = rootData.value("channel_status").toString();
+  mem.xmpEnabled = rootData.value("xmp_enabled").toBool();
+  mem.totalMemoryGB = rootData.value("total_memory_gb").toDouble();
+  mem.moduleCount = 0;
+  mem.moduleCapacityGB = 0;
+
   // Extract performance metrics from nested benchmark_results (protobuf structure)
   if (rootData.contains("benchmark_results") && rootData["benchmark_results"].isObject()) {
     QJsonObject results = rootData["benchmark_results"].toObject();
@@ -1729,15 +1685,6 @@ MemoryComparisonData MemoryResultRenderer::convertNetworkDataToMemory(const Comp
            << "MB/s, latency=" << mem.latencyNs << "ns, read=" << mem.readTimeGBs 
            << "GB/s, write=" << mem.writeTimeGBs << "GB/s";
   
-  // For network data, set reasonable defaults since component name is not available
-  mem.type = "DDR4"; // Default assumption
-  mem.frequencyMHz = 0; // Unknown from direct data
-  mem.totalMemoryGB = 0; // Unknown from direct data 
-  mem.channelStatus = ""; // Unknown for network data
-  mem.xmpEnabled = false; // Unknown for network data
-  mem.moduleCount = 0; // Unknown for network data
-  mem.moduleCapacityGB = 0; // Unknown for network data
-  
   LOG_INFO << "MemoryResultRenderer: Conversion complete";
   return mem;
 }
@@ -1751,8 +1698,13 @@ std::map<QString, MemoryComparisonData> MemoryResultRenderer::createDropdownData
   
   // Create placeholder entries for each memory type in the menu
   for (const QString& memoryName : menuData.availableMemory) {
+    const QString model = memoryName.trimmed();
+    if (model.isEmpty()) {
+      continue;
+    }
     MemoryComparisonData placeholder;
-    placeholder.type = memoryName; // Use the full name as provided
+    placeholder.model = model; // Use the backend-provided name
+    placeholder.type = "";
     placeholder.totalMemoryGB = 0;
     placeholder.frequencyMHz = 0;
     placeholder.channelStatus = "";
@@ -1767,9 +1719,9 @@ std::map<QString, MemoryComparisonData> MemoryResultRenderer::createDropdownData
     placeholder.moduleCount = 0;
     placeholder.moduleCapacityGB = 0;
     
-    dropdownData[memoryName] = placeholder;
+    dropdownData[model] = placeholder;
     
-    LOG_INFO << "MemoryResultRenderer: Added memory option: " << memoryName.toStdString();
+    LOG_INFO << "MemoryResultRenderer: Added memory option: " << model.toStdString();
   }
   
   return dropdownData;

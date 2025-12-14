@@ -12,7 +12,6 @@
 #include <QJsonObject>    // Add for JSON objects
 #include <QPushButton>
 #include <QRegularExpression>  // Add for regex
-#include <QTextEdit>
 #include <QVBoxLayout>
 
 #include "DiagnosticViewComponents.h"
@@ -22,7 +21,7 @@
 
 namespace DiagnosticRenderers {
 
-QWidget* DriveResultRenderer::createDriveResultWidget(const QString& result, const MenuData* networkMenuData, DownloadApiClient* downloadClient) {
+QWidget* DriveResultRenderer::createDriveResultWidget(const QString& /*result*/, const MenuData* networkMenuData, DownloadApiClient* downloadClient) {
   LOG_INFO << "DriveResultRenderer: Creating drive result widget with network support";
   
   // Get data from DiagnosticDataStore
@@ -103,10 +102,6 @@ QWidget* DriveResultRenderer::createDriveResultWidget(const QString& result, con
       scaledMaxIops, scaledMaxAccessTime, allComparisonData, downloadClient);
     mainLayout->addWidget(driveWidget);
   }
-
-  // Add raw data section at the bottom
-  QWidget* rawDataWidget = createRawDataWidget(result);
-  mainLayout->addWidget(rawDataWidget);
 
   return containerWidget;
 }
@@ -445,50 +440,6 @@ QString DriveResultRenderer::getColorForSpeed(double value, double typicalValue,
   // Create the color using HSV
   QColor hsv = QColor::fromHsv(hue, sat, val);
   return hsv.name();
-}
-
-QWidget* DriveResultRenderer::createRawDataWidget(const QString& result) {
-  QWidget* rawDataContainer = new QWidget();
-  QVBoxLayout* rawDataLayout = new QVBoxLayout(rawDataContainer);
-  rawDataContainer->setStyleSheet(
-    "background-color: #252525; border-radius: 4px;");
-
-  QPushButton* showRawDataBtn = new QPushButton("▼ Show Raw Data");
-  showRawDataBtn->setStyleSheet(R"(
-        QPushButton {
-            color: #0078d4;
-            border: none;
-            text-align: left;
-            padding: 4px;
-            font-size: 12px;
-            background-color: #252525;
-        }
-        QPushButton:hover {
-            color: #1084d8;
-            text-decoration: underline;
-        }
-    )");
-
-  QTextEdit* rawDataText = new QTextEdit();
-  rawDataText->setReadOnly(true);
-  rawDataText->setFixedHeight(150);
-  rawDataText->setText(result);
-  rawDataText->setStyleSheet(
-    "background-color: #1e1e1e; color: #dddddd; border: 1px solid #333333;");
-  rawDataText->hide();
-
-  // Connect with captured variables for lambda
-  QObject::connect(
-    showRawDataBtn, &QPushButton::clicked, [showRawDataBtn, rawDataText]() {
-      bool visible = rawDataText->isVisible();
-      rawDataText->setVisible(!visible);
-      showRawDataBtn->setText(visible ? "▼ Show Raw Data" : "▲ Hide Raw Data");
-    });
-
-  rawDataLayout->addWidget(showRawDataBtn);
-  rawDataLayout->addWidget(rawDataText);
-
-  return rawDataContainer;
 }
 
 std::map<QString, DriveComparisonData> DriveResultRenderer::
@@ -1117,8 +1068,20 @@ std::map<QString, DriveComparisonData> DriveResultRenderer::createDropdownDataFr
   
   // Create placeholder entries for each drive type in the menu
   for (const QString& driveName : menuData.availableDrives) {
+    const QString trimmed = driveName.trimmed();
+    if (trimmed.isEmpty()) {
+      continue;
+    }
+
+    // Filter out bogus "drive letter" pseudo-models like "D:\".
+    static const QRegularExpression driveLetterOnly(R"(^[A-Za-z]:\\?$)");
+    if (driveLetterOnly.match(trimmed).hasMatch() || trimmed.size() < 6) {
+      LOG_INFO << "DriveResultRenderer: Skipping invalid drive name from menu: " << trimmed.toStdString();
+      continue;
+    }
+
     DriveComparisonData placeholder;
-    placeholder.model = driveName; // Use the full name as provided
+    placeholder.model = trimmed; // Use the full name as provided
     placeholder.driveType = "";
     
     // Performance metrics are 0 initially (will be loaded on demand)
@@ -1127,9 +1090,9 @@ std::map<QString, DriveComparisonData> DriveResultRenderer::createDropdownDataFr
     placeholder.iops4k = 0;
     placeholder.accessTimeMs = 0;
     
-    dropdownData[driveName] = placeholder;
+    dropdownData[placeholder.model] = placeholder;
     
-    LOG_INFO << "DriveResultRenderer: Added drive option: " << driveName.toStdString();
+    LOG_INFO << "DriveResultRenderer: Added drive option: " << placeholder.model.toStdString();
   }
   
   return dropdownData;

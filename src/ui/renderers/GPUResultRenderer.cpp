@@ -247,30 +247,6 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
 
   performanceLayout->addWidget(fpsBar);
 
-  // Add performance assessment with consistent styling
-  QString assessment;
-  if (averageFPS >= 3500)
-    assessment = "Excellent GPU performance. Your system has top-tier graphics "
-                 "capabilities.";
-  else if (averageFPS >= 2000)
-    assessment = "Good GPU performance. Your system can handle demanding "
-                 "graphics tasks smoothly.";
-  else if (averageFPS >= 1000)
-    assessment = "Normal GPU performance. Your system can run most "
-                 "applications without issues.";
-  else if (averageFPS >= 300)
-    assessment = "Below average GPU performance. Consider lowering settings in "
-                 "demanding applications.";
-  else
-    assessment = "Potential GPU issue. Your GPU may need an upgrade for modern "
-                 "applications.";
-
-  QLabel* assessmentLabel = new QLabel("<b>Assessment:</b> " + assessment);
-  assessmentLabel->setWordWrap(true);
-  assessmentLabel->setStyleSheet(
-    "color: #dddddd; font-style: italic; margin-top: 8px;");
-  performanceLayout->addWidget(assessmentLabel);
-
   // Add the performance box to the metrics layout
   gpuMetricsLayout->addWidget(performanceBox, 2, 0, 1, 3);
 
@@ -279,11 +255,6 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
 
   // Add GPU metrics widget to container
   mainLayout->addWidget(gpuMetricsWidget);
-
-  // Create a raw data widget that matches memory renderer styling
-  QWidget* rawDataWidget =
-    DiagnosticViewComponents::createRawDataWidget(result);
-  mainLayout->addWidget(rawDataWidget);
 
   return containerWidget;
 }

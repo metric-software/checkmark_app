@@ -1833,12 +1833,6 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
   // Fallback to getting cache sizes from SystemInfoProvider if needed
   // No fallback to SystemInfoProvider; use only ConstantSystemInfo
 
-  // Calculate RAM/L3 latency ratio
-  double memoryToL3Ratio =
-    cpuData.cache.l3LatencyNs > 0
-      ? cpuData.cache.ramLatencyNs / cpuData.cache.l3LatencyNs
-      : 0;
-
   // Get latencies for different buffer sizes from the store
   QMap<int, double> cacheLatencies;
   const int sizes[] = {
@@ -2306,13 +2300,6 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
     }
   }
 
-  // Add RAM/L3 ratio
-  QString ratioText =
-    QString("RAM/L3 latency ratio: <b>%1x</b>").arg(memoryToL3Ratio, 0, 'f', 2);
-  QLabel* ratioLabel = new QLabel(ratioText);
-  ratioLabel->setStyleSheet("color: #FFAA00; margin-top: 8px;");
-  chartLayout->addWidget(ratioLabel);
-
   // Add explanation text
   QLabel* infoLabel =
     new QLabel("Cache latency measures how quickly your CPU can access data "
@@ -2329,47 +2316,6 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
 
   // Add the latency widget to the main layout
   mainLayout->addWidget(latencyWidget);
-
-  // Add detailed latency table in a collapsible section
-  QWidget* detailedDataContainer = new QWidget();
-  QVBoxLayout* detailedDataLayout = new QVBoxLayout(detailedDataContainer);
-
-  QPushButton* showDetailsBtn =
-    new QPushButton("▼ Show Detailed Cache Latencies");
-  showDetailsBtn->setStyleSheet(R"(
-        QPushButton {
-            color: #0078d4;
-            border: none;
-            text-align: left;
-            padding: 4px;
-            font-size: 12px;
-            background: transparent;
-        }
-        QPushButton:hover {
-            color: #1084d8;
-            text-decoration: underline;
-        }
-    )");
-
-  // Create table widget and keep it hidden initially
-  QWidget* detailsWidget =
-    createDetailedLatencyTable(cacheLatencies, l2CacheKB, l3CacheKB);
-  detailsWidget->setVisible(false);
-
-  // Connect button to toggle visibility
-  QObject::connect(
-    showDetailsBtn, &QPushButton::clicked, [showDetailsBtn, detailsWidget]() {
-      bool visible = detailsWidget->isVisible();
-      detailsWidget->setVisible(!visible);
-      showDetailsBtn->setText(visible ? "▼ Show Detailed Cache Latencies"
-                                      : "▲ Hide Detailed Cache Latencies");
-    });
-
-  detailedDataLayout->addWidget(showDetailsBtn);
-  detailedDataLayout->addWidget(detailsWidget);
-
-  // Add to main layout
-  mainLayout->addWidget(detailedDataContainer);
 
   return containerWidget;
 }
@@ -2470,94 +2416,6 @@ QWidget* CPUResultRenderer::createLatencyBar(const QString& label, double value,
 
   mainLayout->addLayout(layout);
   return container;
-}
-
-QWidget* CPUResultRenderer::createDetailedLatencyTable(
-  const QMap<int, double>& cacheLatencies, int l2CacheKB, int l3CacheKB) {
-  QWidget* detailsWidget = new QWidget();
-  QVBoxLayout* detailsLayout = new QVBoxLayout(detailsWidget);
-  detailsLayout->setContentsMargins(0, 0, 0, 0);
-
-  // Create a table to show all latency results
-  QTableWidget* latencyTable = new QTableWidget(cacheLatencies.size(), 4);
-  latencyTable->setHorizontalHeaderLabels(
-    {"Cache Size", "Latency", "Likely Cache Level", "Memory Access Time"});
-  latencyTable->setStyleSheet(
-    "background-color: #1e1e1e; color: #dddddd; border: 1px solid #333333;");
-
-  // Set appropriate sizing policy to prevent horizontal expansion
-  latencyTable->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-  latencyTable->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-  latencyTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-
-  // Add these header resize modes to prevent horizontal expansion
-  latencyTable->horizontalHeader()->setSectionResizeMode(
-    0, QHeaderView::ResizeToContents);
-  latencyTable->horizontalHeader()->setSectionResizeMode(
-    1, QHeaderView::ResizeToContents);
-  latencyTable->horizontalHeader()->setSectionResizeMode(
-    2, QHeaderView::ResizeToContents);
-  latencyTable->horizontalHeader()->setSectionResizeMode(3,
-                                                         QHeaderView::Stretch);
-
-  int row = 0;
-  for (auto it = cacheLatencies.begin(); it != cacheLatencies.end(); ++it) {
-    int sizeKB = it.key();
-    double latencyNs = it.value();
-
-    QTableWidgetItem* sizeItem = new QTableWidgetItem();
-
-    // Format size (show in MB if >=1024 KB)
-    QString sizeText;
-    if (sizeKB >= 1024) {
-      sizeText = QString("%1 MB").arg(sizeKB / 1024);
-    } else {
-      sizeText = QString("%1 KB").arg(sizeKB);
-    }
-
-    sizeItem->setText(sizeText);
-    latencyTable->setItem(row, 0, sizeItem);
-
-    QTableWidgetItem* latencyItem = new QTableWidgetItem();
-    latencyItem->setText(QString("%1 ns").arg(latencyNs, 0, 'f', 1));
-    latencyTable->setItem(row, 1, latencyItem);
-
-    QTableWidgetItem* cacheTypeItem = new QTableWidgetItem();
-    QString cacheLevel;
-    QColor levelColor;
-
-    if (sizeKB <= 64) {
-      cacheLevel = "L1 Cache";
-      levelColor = QColor("#44FF44");
-    } else if (sizeKB <= l2CacheKB) {
-      cacheLevel = "L2 Cache";
-      levelColor = QColor("#88FF88");
-    } else if (sizeKB <= l3CacheKB) {
-      cacheLevel = "L3 Cache";
-      levelColor = QColor("#FFAA00");
-    } else {
-      cacheLevel = "Main Memory";
-      levelColor = QColor("#FF6666");
-    }
-
-    cacheTypeItem->setText(cacheLevel);
-    cacheTypeItem->setForeground(QBrush(levelColor));
-    latencyTable->setItem(row, 2, cacheTypeItem);
-
-    // Calculate CPU cycles at 3GHz (common base clock)
-    double cpuCycles = latencyNs * 3.0;  // 3GHz = 3 cycles per nanosecond
-    QTableWidgetItem* cyclesItem = new QTableWidgetItem();
-    cyclesItem->setText(QString("%1 cycles").arg(cpuCycles, 0, 'f', 1));
-    latencyTable->setItem(row, 3, cyclesItem);
-
-    row++;
-  }
-
-  latencyTable->resizeColumnsToContents();
-  latencyTable->setFixedHeight(200);
-  detailsLayout->addWidget(latencyTable);
-
-  return detailsWidget;
 }
 
 QWidget* CPUResultRenderer::createMetricBox(const QString& title) {

@@ -44,7 +44,6 @@ class DriveResultRenderer {
   static QWidget* createPerformanceBar(const QString& label, double value,
                                        double maxValue, const QString& unit,
                                        bool higherIsBetter = true);
-  static QWidget* createRawDataWidget(const QString& result);
   static QString getColorForSpeed(double value, double typicalValue,
                                   bool higherIsBetter);
 

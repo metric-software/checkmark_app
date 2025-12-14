@@ -18,6 +18,10 @@ namespace DiagnosticRenderers {
 
 // Move struct definition before the class that uses it
 struct MemoryComparisonData {
+  // Display/model name used for dropdown entries (backend-provided for network data).
+  QString model;
+
+  // Memory type (e.g. DDR4/DDR5) when available (primarily from local JSON files).
   QString type;
   double totalMemoryGB;
   int frequencyMHz;
@@ -79,7 +83,6 @@ class MemoryResultRenderer {
   static QString getMemoryPerformanceRecommendation(double bandwidth,
                                                     double latency,
                                                     bool xmpEnabled);
-  static QWidget* createRawDataWidget(const QString& result);
   static QWidget* createMemoryModulesTable(
     const std::vector<DiagnosticDataStore::MemoryData::MemoryModule>& modules);
   static QWidget* createStabilityTestWidget(
