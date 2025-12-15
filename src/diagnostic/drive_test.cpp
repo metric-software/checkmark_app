@@ -1,6 +1,8 @@
 #include "drive_test.h"
 #include "../logging/Logger.h"
 
+#include "../core/AppNotificationBus.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -12,6 +14,9 @@
 
 #include <windows.h>
 #include <winioctl.h>
+
+#include <QDateTime>
+#include <QUuid>
 
 #include "diagnostic/DiagnosticDataStore.h"
 #include "hardware/ConstantSystemInfo.h"
@@ -42,6 +47,55 @@ std::string errorToString(DWORD error) {
   std::ostringstream ss;
   ss << "Error code: " << error;
   return ss.str();
+}
+
+static std::string ensureTrailingSlash(std::string s) {
+  if (s.empty()) return s;
+  const char last = s.back();
+  if (last == '\\' || last == '/') return s;
+  s.push_back('\\');
+  return s;
+}
+
+static bool ensureDirectoryExists(const std::string& dirPath, QString* outError) {
+  if (dirPath.empty()) {
+    if (outError) *outError = QStringLiteral("Directory path is empty");
+    return false;
+  }
+
+  const BOOL ok = CreateDirectoryA(dirPath.c_str(), nullptr);
+  if (ok) return true;
+  const DWORD err = GetLastError();
+  if (err == ERROR_ALREADY_EXISTS) return true;
+  if (outError) {
+    *outError = QStringLiteral("CreateDirectory failed (%1)")
+                  .arg(QString::fromStdString(errorToString(err)));
+  }
+  return false;
+}
+
+static std::string makeDriveTestDir(const std::string& driveRoot) {
+  return ensureTrailingSlash(driveRoot) + "checkmark_drive_test\\";
+}
+
+static bool fileExistsA(const std::string& path) {
+  const DWORD attrs = GetFileAttributesA(path.c_str());
+  return attrs != INVALID_FILE_ATTRIBUTES;
+}
+
+static std::string makeUniqueTempFilePathInDir(const std::string& dirPath,
+                                               const std::string& prefix,
+                                               const std::string& ext) {
+  const QString guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+  return ensureTrailingSlash(dirPath) + prefix + guid.toStdString() + ext;
+}
+
+static void notifyDriveTestError(const QString& message) {
+  AppNotificationBus::post(message, AppNotificationBus::Type::Error, 8000);
+}
+
+static void notifyDriveTestWarning(const QString& message) {
+  AppNotificationBus::post(message, AppNotificationBus::Type::Warning, 8000);
 }
 
 // Update to use DiagnosticDataStore
@@ -111,12 +165,45 @@ DriveTestResults testDrivePerformance(const std::string& path) {
   const size_t BLOCK_SIZE = 1024 * 1024;  // 1MB blocks for sequential tests
   const size_t SMALL_BLOCK = 4096;        // 4KB for IOPS test
 
-  const std::string testFile = path + "drivebench.tmp";
+  // Keep artifacts in a dedicated folder under the tested drive root.
+  const std::string testDir = makeDriveTestDir(path);
+  {
+    QString dirError;
+    if (!ensureDirectoryExists(testDir, &dirError)) {
+      notifyDriveTestError(
+        QStringLiteral("Drive Test failed: could not create temp folder (%1)").arg(dirError));
+      results.sequentialReadMBps = -1.0;
+      results.sequentialWriteMBps = -1.0;
+      results.iops4k = -1.0;
+      results.accessTimeMs = -1.0;
+      return results;
+    }
+  }
+
+  std::string testFile;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    testFile = makeUniqueTempFilePathInDir(testDir, "drivebench_", ".tmp");
+    if (!fileExistsA(testFile)) break;
+  }
+  if (testFile.empty() || fileExistsA(testFile)) {
+    notifyDriveTestError(
+      QStringLiteral("Drive Test failed: could not allocate a unique temp file name"));
+    results.sequentialReadMBps = -1.0;
+    results.sequentialWriteMBps = -1.0;
+    results.iops4k = -1.0;
+    results.accessTimeMs = -1.0;
+    return results;
+  }
 
   // Create aligned buffer with random data
   void* alignedBuffer = _aligned_malloc(BLOCK_SIZE, 4096);
   if (!alignedBuffer) {
-    throw std::runtime_error("Failed to allocate aligned buffer");
+    notifyDriveTestError(QStringLiteral("Drive Test failed: memory allocation failed (aligned buffer)"));
+    results.sequentialReadMBps = -1.0;
+    results.sequentialWriteMBps = -1.0;
+    results.iops4k = -1.0;
+    results.accessTimeMs = -1.0;
+    return results;
   }
 
   // Fill with random data
@@ -146,14 +233,21 @@ DriveTestResults testDrivePerformance(const std::string& path) {
     HANDLE hFile =
       CreateFileA(testFile.c_str(), GENERIC_WRITE,
                   0,  // No sharing
-                  NULL, CREATE_ALWAYS,
+                  NULL, CREATE_NEW,
                   FILE_FLAG_NO_BUFFERING |      // Disable system cache
                     FILE_FLAG_SEQUENTIAL_SCAN,  // Hint sequential access
                   NULL);
 
     if (hFile == INVALID_HANDLE_VALUE) {
       _aligned_free(alignedBuffer);
-      throw std::runtime_error("Failed to create test file");
+      notifyDriveTestError(
+        QStringLiteral("Drive Test failed: could not create temp test file (%1)")
+          .arg(QString::fromStdString(errorToString(GetLastError()))));
+      results.sequentialReadMBps = -1.0;
+      results.sequentialWriteMBps = -1.0;
+      results.iops4k = -1.0;
+      results.accessTimeMs = -1.0;
+      return results;
     }
 
     // Disable disk write cache
@@ -242,6 +336,23 @@ DriveTestResults testDrivePerformance(const std::string& path) {
                     FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
                   NULL);
 
+    if (hFile == INVALID_HANDLE_VALUE) {
+      notifyDriveTestError(
+        QStringLiteral("Drive Test failed: could not open temp file for sequential read (%1)")
+          .arg(QString::fromStdString(errorToString(GetLastError()))));
+      _aligned_free(alignedBuffer);
+      if (!testFile.empty() && !DeleteFileA(testFile.c_str())) {
+        const DWORD err = GetLastError();
+        notifyDriveTestWarning(
+          QStringLiteral("Drive Test cleanup warning: failed to delete temp file (%1)")
+            .arg(QString::fromStdString(errorToString(err))));
+      }
+      results.sequentialReadMBps = -1.0;
+      results.iops4k = -1.0;
+      results.accessTimeMs = -1.0;
+      return results;
+    }
+
     std::vector<double> speeds;
     for (int pass = 0; pass < NUM_PASSES; pass++) {
       auto start = std::chrono::high_resolution_clock::now();
@@ -328,49 +439,83 @@ DriveTestResults testDrivePerformance(const std::string& path) {
         FILE_FLAG_RANDOM_ACCESS,  // Remove FILE_FLAG_WRITE_THROUGH
       NULL);
 
+    const bool iopsFileOpened = (hFile != INVALID_HANDLE_VALUE);
+    if (!iopsFileOpened) {
+      notifyDriveTestError(
+        QStringLiteral("Drive Test failed: could not open temp file for 4K random I/O (%1)")
+          .arg(QString::fromStdString(errorToString(GetLastError()))));
+      results.iops4k = -1.0;
+    }
+
     auto start = std::chrono::high_resolution_clock::now();
     DWORD transferred;
     int operationsCompleted = 0;
 
-    for (int i = 0; i < NUM_IOPS_OPERATIONS; i++) {
-      LARGE_INTEGER li;
-      li.QuadPart = offsets[i];
-      SetFilePointerEx(hFile, li, NULL, FILE_BEGIN);
-      WriteFile(hFile, alignedBuffer, SMALL_BLOCK, &transferred, NULL);
+    if (iopsFileOpened) {
+      for (int i = 0; i < NUM_IOPS_OPERATIONS; i++) {
+        LARGE_INTEGER li;
+        li.QuadPart = offsets[i];
+        if (!SetFilePointerEx(hFile, li, NULL, FILE_BEGIN)) {
+          notifyDriveTestError(
+            QStringLiteral(
+              "Drive Test failed: could not seek temp file for 4K random I/O (%1)")
+              .arg(QString::fromStdString(errorToString(GetLastError()))));
+          results.iops4k = -1.0;
+          break;
+        }
+        if (!WriteFile(hFile, alignedBuffer, SMALL_BLOCK, &transferred, NULL) ||
+            transferred != SMALL_BLOCK) {
+          notifyDriveTestError(
+            QStringLiteral(
+              "Drive Test failed: could not write temp file for 4K random I/O (%1)")
+              .arg(QString::fromStdString(errorToString(GetLastError()))));
+          results.iops4k = -1.0;
+          break;
+        }
       // Remove FlushFileBuffers(hFile); - this was causing synchronous writes
       // and killing IOPS performance
 
-      operationsCompleted++;
+        operationsCompleted++;
 
-      // Periodically update progress
-      if (i % (NUM_IOPS_OPERATIONS / 10) == 0) {
-        float percent = static_cast<float>(i) / NUM_IOPS_OPERATIONS * 100.0f;
-        emitDriveTestProgress(QString("Drive Test: 4K Random I/O (%1%)")
-                                .arg(static_cast<int>(percent)),
-                              75);
-      }
+        // Periodically update progress
+        if (i % (NUM_IOPS_OPERATIONS / 10) == 0) {
+          float percent = static_cast<float>(i) / NUM_IOPS_OPERATIONS * 100.0f;
+          emitDriveTestProgress(QString("Drive Test: 4K Random I/O (%1%)")
+                                  .arg(static_cast<int>(percent)),
+                                75);
+        }
 
-      // Check if test is taking too long
-      auto current = std::chrono::high_resolution_clock::now();
-      auto elapsed = std::chrono::duration<double>(current - start).count();
-      if (elapsed > MAX_TEST_DURATION_SEC) {
-        iopsTimeoutDetected = true;
-        LOG_WARN << "4K random write IOPS test taking too long, stopping early after " << elapsed << " seconds. Drive may be slower than initially detected.";
-        break;
+        // Check if test is taking too long
+        auto current = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration<double>(current - start).count();
+        if (elapsed > MAX_TEST_DURATION_SEC) {
+          iopsTimeoutDetected = true;
+          LOG_WARN
+            << "4K random write IOPS test taking too long, stopping early after "
+            << elapsed
+            << " seconds. Drive may be slower than initially detected.";
+          break;
+        }
       }
     }
 
     // Flush once at the end to ensure data is written
-    FlushFileBuffers(hFile);
+    if (iopsFileOpened && results.iops4k >= 0.0) {
+      FlushFileBuffers(hFile);
+    }
     // Progress newline removed - handled by emitDriveTestProgress
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration<double>(end - start).count();
 
     // Calculate IOPS based on actual operations completed
-    results.iops4k = operationsCompleted / duration;
+    if (results.iops4k >= 0.0) {
+      results.iops4k = operationsCompleted / duration;
+    }
 
-    CloseHandle(hFile);
+    if (iopsFileOpened) {
+      CloseHandle(hFile);
+    }
 
     LOG_INFO << "4K random write IOPS test completed: " << results.iops4k << " IOPS";
   }
@@ -392,13 +537,37 @@ DriveTestResults testDrivePerformance(const std::string& path) {
   LOG_INFO << "  - Access Time:      " << results.accessTimeMs << " ms";
 
   _aligned_free(alignedBuffer);
-  DeleteFileA(testFile.c_str());
+  if (!testFile.empty() && !DeleteFileA(testFile.c_str())) {
+    const DWORD err = GetLastError();
+    notifyDriveTestWarning(
+      QStringLiteral("Drive Test cleanup warning: failed to delete temp file (%1)")
+        .arg(QString::fromStdString(errorToString(err))));
+  }
   return results;
 }
 
 // Helper function to quickly probe drive speed
 double probeDriveSpeed(const std::string& path, size_t probeSize) {
-  const std::string testFile = path + "drivebench_probe.tmp";
+  const std::string testDir = makeDriveTestDir(path);
+  {
+    QString dirError;
+    if (!ensureDirectoryExists(testDir, &dirError)) {
+      notifyDriveTestError(
+        QStringLiteral("Drive probe failed: could not create temp folder (%1)").arg(dirError));
+      return 100.0;  // Default to medium speed on failure
+    }
+  }
+
+  std::string testFile;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    testFile = makeUniqueTempFilePathInDir(testDir, "drivebench_probe_", ".tmp");
+    if (!fileExistsA(testFile)) break;
+  }
+  if (testFile.empty() || fileExistsA(testFile)) {
+    notifyDriveTestError(
+      QStringLiteral("Drive probe failed: could not allocate a unique temp file name"));
+    return 100.0;
+  }
   const size_t BLOCK_SIZE = 1024 * 1024;  // 1MB blocks
 
   // Create aligned buffer with random data
@@ -420,33 +589,50 @@ double probeDriveSpeed(const std::string& path, size_t probeSize) {
 
   // Quick sequential write test
   HANDLE hFile =
-    CreateFileA(testFile.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+    CreateFileA(testFile.c_str(), GENERIC_WRITE, 0, NULL, CREATE_NEW,
                 FILE_FLAG_NO_BUFFERING,  // Remove FILE_FLAG_WRITE_THROUGH for
                                          // better probe accuracy
                 NULL);
 
-  if (hFile != INVALID_HANDLE_VALUE) {
-    auto start = std::chrono::high_resolution_clock::now();
-    size_t bytesWritten = 0;
-    DWORD written;
-
-    while (bytesWritten < probeSize) {
-      if (!WriteFile(hFile, alignedBuffer, BLOCK_SIZE, &written, NULL)) break;
-      bytesWritten += written;
+  if (hFile == INVALID_HANDLE_VALUE) {
+    notifyDriveTestError(
+      QStringLiteral("Drive probe failed: could not create temp file (%1)")
+        .arg(QString::fromStdString(errorToString(GetLastError()))));
+    _aligned_free(alignedBuffer);
+    if (!testFile.empty() && !DeleteFileA(testFile.c_str())) {
+      const DWORD err = GetLastError();
+      notifyDriveTestWarning(
+        QStringLiteral("Drive probe cleanup warning: failed to delete temp file (%1)")
+          .arg(QString::fromStdString(errorToString(err))));
     }
-
-    // Flush at the end to ensure data is written
-    FlushFileBuffers(hFile);
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration<double>(end - start).count();
-    speed = (bytesWritten / 1024.0 / 1024.0) / duration;
-
-    CloseHandle(hFile);
+    return 100.0;
   }
 
+  auto start = std::chrono::high_resolution_clock::now();
+  size_t bytesWritten = 0;
+  DWORD written;
+
+  while (bytesWritten < probeSize) {
+    if (!WriteFile(hFile, alignedBuffer, BLOCK_SIZE, &written, NULL)) break;
+    bytesWritten += written;
+  }
+
+  // Flush at the end to ensure data is written
+  FlushFileBuffers(hFile);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration<double>(end - start).count();
+  speed = (bytesWritten / 1024.0 / 1024.0) / duration;
+
+  CloseHandle(hFile);
+
   _aligned_free(alignedBuffer);
-  DeleteFileA(testFile.c_str());
+  if (!testFile.empty() && !DeleteFileA(testFile.c_str())) {
+    const DWORD err = GetLastError();
+    notifyDriveTestWarning(
+      QStringLiteral("Drive probe cleanup warning: failed to delete temp file (%1)")
+        .arg(QString::fromStdString(errorToString(err))));
+  }
 
   return speed;
 }
@@ -464,7 +650,19 @@ void measureAccessTime(const std::string& path, DriveTestResults& results) {
                           .arg(QString::fromStdString(path)),
                         77);
 
-  std::string testFile = path + "drivebench.tmp";
+  const std::string testDir = makeDriveTestDir(path);
+  {
+    QString dirError;
+    if (!ensureDirectoryExists(testDir, &dirError)) {
+      notifyDriveTestError(
+        QStringLiteral("Access Time Test failed: could not create temp folder (%1)").arg(dirError));
+      results.accessTimeMs = 0.0;
+      return;
+    }
+  }
+
+  // Stable name inside our dedicated folder; never touch the drive root.
+  std::string testFile = ensureTrailingSlash(testDir) + "access_time_drivebench.tmp";
   bool needToCreateFile = false;
 
   // First check if existing file is available and large enough
@@ -491,14 +689,29 @@ void measureAccessTime(const std::string& path, DriveTestResults& results) {
       QString("Drive Test: Creating Test File for Access Time Test"), 77);
     LOG_INFO << "Creating dedicated file for access time measurement...";
 
+    // If an old temp file exists, rotate it instead of overwriting.
+    if (fileExistsA(testFile)) {
+      const QString ts = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+      const std::string rotated = ensureTrailingSlash(testDir) +
+        std::string("access_time_drivebench.old_") + ts.toStdString() + ".tmp";
+      if (!MoveFileExA(testFile.c_str(), rotated.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) {
+        const DWORD err = GetLastError();
+        notifyDriveTestWarning(
+          QStringLiteral("Access Time Test warning: failed to rotate old temp file (%1)")
+            .arg(QString::fromStdString(errorToString(err))));
+      }
+    }
+
     // Create file with sufficient size
     HANDLE hCreateFile = CreateFileA(
-      testFile.c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS,
+      testFile.c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_NEW,
       FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
 
     if (hCreateFile == INVALID_HANDLE_VALUE) {
       results.accessTimeMs = 0.0;
-      LOG_ERROR << "Access time measurement: Failed to create test file: " << errorToString(GetLastError());
+      notifyDriveTestError(
+        QStringLiteral("Access Time Test failed: could not create temp file (%1)")
+          .arg(QString::fromStdString(errorToString(GetLastError()))));
       return;
     }
 
@@ -528,6 +741,9 @@ void measureAccessTime(const std::string& path, DriveTestResults& results) {
         _aligned_free(writeBuf);
         CloseHandle(hCreateFile);
         results.accessTimeMs = 0.0;
+        notifyDriveTestError(
+          QStringLiteral("Access Time Test failed: write error (%1)")
+            .arg(QString::fromStdString(errorToString(GetLastError()))));
         LOG_ERROR << "Access time measurement: Failed to write to test file: " << errorToString(GetLastError());
         return;
       }
@@ -558,6 +774,9 @@ void measureAccessTime(const std::string& path, DriveTestResults& results) {
 
   if (hFile == INVALID_HANDLE_VALUE) {
     results.accessTimeMs = 0.0;
+    notifyDriveTestError(
+      QStringLiteral("Access Time Test failed: could not open temp file for reading (%1)")
+        .arg(QString::fromStdString(errorToString(GetLastError()))));
     LOG_ERROR << "Access time measurement: Failed to open test file: " << errorToString(GetLastError());
     return;
   }
@@ -720,6 +939,14 @@ void measureAccessTime(const std::string& path, DriveTestResults& results) {
 
   _aligned_free(readBuf);
   CloseHandle(hFile);
+
+  // Cleanup: this is a temporary test artifact.
+  if (!testFile.empty() && !DeleteFileA(testFile.c_str())) {
+    const DWORD err = GetLastError();
+    notifyDriveTestWarning(
+      QStringLiteral("Access Time Test cleanup warning: failed to delete temp file (%1)")
+        .arg(QString::fromStdString(errorToString(err))));
+  }
 }
 
 void printDriveHealth(const char* drive) {

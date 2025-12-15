@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSslError>
 #include <QTimer>
 #include <QUrl>
 
@@ -45,11 +46,17 @@ void FeatureToggleManager::fetchAndApplyRemoteFlags() {
     }
 
     LOG_INFO << "FeatureToggleManager: Fetching remote feature flags from "
-             << url.toString().toStdString();
+             << url.toString().toStdString()
+             << " (baseUrl=" << baseUrl.toStdString()
+             << ", insecureSsl="
+             << (NetworkConfig::instance().getAllowInsecureSsl() ? "true" : "false")
+             << ")";
 
     QNetworkAccessManager networkManager;
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QEventLoop loop;
     QTimer timeoutTimer;
@@ -57,18 +64,33 @@ void FeatureToggleManager::fetchAndApplyRemoteFlags() {
 
     QNetworkReply* reply = networkManager.get(request);
 
+    QObject::connect(reply, &QNetworkReply::sslErrors, this,
+                     [reply](const QList<QSslError>& errors) {
+                       if (!reply) return;
+                       if (NetworkConfig::instance().getAllowInsecureSsl()) {
+                         LOG_WARN << "FeatureToggleManager: SSL errors ignored due to "
+                                     "CHECKMARK_ALLOW_INSECURE_SSL";
+                         reply->ignoreSslErrors();
+                       } else {
+                         LOG_WARN << "FeatureToggleManager: SSL errors (not ignored): "
+                                  << errors.size();
+                       }
+                     });
+
     QObject::connect(&networkManager, &QNetworkAccessManager::finished, &loop,
                      &QEventLoop::quit);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
 
-    timeoutTimer.start(3000);  // 3s timeout for config fetch
+    timeoutTimer.start(10000);  // 10s timeout for config fetch (allow for TLS/DNS)
     loop.exec();
 
+    const bool timedOut = !timeoutTimer.isActive();
     if (timeoutTimer.isActive()) {
       timeoutTimer.stop();
     } else {
       // Timed out - abort request
       if (reply) {
+        LOG_WARN << "FeatureToggleManager: Timeout fetching app_config; aborting request";
         reply->abort();
       }
     }
@@ -77,13 +99,24 @@ void FeatureToggleManager::fetchAndApplyRemoteFlags() {
     bool allowUpload = false;
     bool initialized = false;
 
-    if (reply && reply->error() == QNetworkReply::NoError) {
+    if (reply && !timedOut && reply->error() == QNetworkReply::NoError) {
+      const int statusCode =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
       QByteArray body = reply->readAll();
+      LOG_INFO << "FeatureToggleManager: app_config HTTP status=" << statusCode
+               << " bytes=" << body.size();
+
+      if (statusCode < 200 || statusCode >= 300) {
+        LOG_WARN << "FeatureToggleManager: app_config returned HTTP "
+                 << statusCode << ", treating as invalid response";
+      } else {
       QJsonParseError parseError{};
       QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
       if (parseError.error != QJsonParseError::NoError) {
         LOG_WARN << "FeatureToggleManager: Failed to parse app_config JSON: "
-                 << parseError.errorString().toStdString();
+                 << parseError.errorString().toStdString()
+                 << " body_prefix="
+                 << QString::fromUtf8(body.left(200)).toStdString();
       } else if (!doc.isObject()) {
         LOG_WARN << "FeatureToggleManager: app_config response is not a JSON object";
       } else {
@@ -100,10 +133,12 @@ void FeatureToggleManager::fetchAndApplyRemoteFlags() {
                  << (allowExperimental ? "true" : "false")
                  << ", upload=" << (allowUpload ? "true" : "false");
       }
+      }
     } else {
       if (reply) {
         LOG_WARN << "FeatureToggleManager: Network error fetching app_config: "
-                 << reply->errorString().toStdString();
+                 << reply->errorString().toStdString()
+                 << " (code=" << static_cast<int>(reply->error()) << ")";
       } else {
         LOG_WARN << "FeatureToggleManager: Network reply is null when fetching app_config";
       }

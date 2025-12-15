@@ -52,6 +52,8 @@ Installer:
 cmake -S . -B build -DCHECKMARK_USE_LOCAL_SERVER=ON
 ```
 
+When `CHECKMARK_USE_LOCAL_SERVER=ON`, the default dev server URL is `http://localhost:8081` (override with `-DCHECKMARK_LOCAL_URL=...` or env `CHECKMARK_BASE_URL`).
+
 ## License
 
 Source-available, non-commercial. See `LICENSE`. Commercial use requires agreement with Metric Software OY.

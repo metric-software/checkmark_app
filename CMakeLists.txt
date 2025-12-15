@@ -63,7 +63,7 @@ option(CHECKMARK_USE_LOCAL_SERVER "Use localhost instead of production server (f
 # Production URL - this is what release builds and users will connect to
 set(CHECKMARK_PRODUCTION_URL "https://checkmark.gg")
 # Local development URL - only used when CHECKMARK_USE_LOCAL_SERVER=ON
-set(CHECKMARK_LOCAL_URL "https://localhost" CACHE STRING "Local development server URL")
+set(CHECKMARK_LOCAL_URL "http://localhost:8081" CACHE STRING "Local development server URL")
 
 if(CHECKMARK_USE_LOCAL_SERVER)
   set(_CHECKMARK_DEFAULT_BASE_URL "${CHECKMARK_LOCAL_URL}")

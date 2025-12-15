@@ -5,6 +5,7 @@
 #include "../utils/RequestBuilder.h"
 #include "../../ApplicationSettings.h"
 #include "../../logging/Logger.h"
+#include "../core/FeatureToggleManager.h"
 #include <QCryptographicHash>
 // Generated protobufs
 #include "benchmark_public.pb.h"
@@ -23,6 +24,12 @@ BenchmarkApiClient::BenchmarkApiClient(QObject* parent)
 }
 
 void BenchmarkApiClient::uploadBenchmark(const QVariant& uploadRequestVariant, BenchUploadCb cb) {
+    LOG_INFO << "BenchmarkApiClient: refreshing remote flags before upload gate check";
+    {
+        FeatureToggleManager featureToggleManager;
+        featureToggleManager.fetchAndApplyRemoteFlags();
+    }
+
     if (!ApplicationSettings::getInstance().getEffectiveAutomaticDataUploadEnabled()) {
         QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()
             ? QStringLiteral("Offline mode is enabled")

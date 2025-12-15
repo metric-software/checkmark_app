@@ -228,14 +228,6 @@ void ApplicationSettings::setAutomaticDataUploadEnabled(bool enabled) {
   settings.sync();  // Force write to disk immediately
 }
 
-void ApplicationSettings::setDeveloperBypassEnabled(bool enabled) {
-  developerBypassEnabled_ = enabled;
-}
-
-bool ApplicationSettings::isDeveloperBypassEnabled() const {
-  return developerBypassEnabled_;
-}
-
 // Remote feature flags (runtime-only)
 void ApplicationSettings::setRemoteFeatureFlags(bool allowExperimental,
                                                 bool allowUpload,
@@ -262,12 +254,6 @@ bool ApplicationSettings::getEffectiveAllowDataCollection() const {
 }
 
 bool ApplicationSettings::getEffectiveExperimentalFeaturesEnabled() const {
-  // Developer bypass: ignore remote flags and backend status, but still
-  // respect the local user preference for experimental features.
-  if (developerBypassEnabled_) {
-    return getExperimentalFeaturesEnabled();
-  }
-
   // If remote flags have not yet been fetched, treat experimental features
   // as disabled until we know the backend status.
   if (!remoteFlagsInitialized_) {
@@ -287,16 +273,10 @@ bool ApplicationSettings::getEffectiveAutomaticDataUploadEnabled() const {
     return false;
   }
 
-  // Developer bypass: ignore remote flags/backend status but still respect
-  // the local privacy toggle.
-  if (developerBypassEnabled_) {
-    return true;
-  }
-
-  // If remote flags have not yet been fetched, fall back to the local
-  // preference so uploads can proceed by default.
+  // If remote flags have not yet been fetched, treat uploads as disabled until
+  // we know the backend status.
   if (!remoteFlagsInitialized_) {
-    return true;
+    return false;
   }
   return remoteUploadAllowed_;
 }

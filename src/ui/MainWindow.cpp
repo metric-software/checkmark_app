@@ -11,10 +11,16 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include "../ApplicationSettings.h"
+#include "../network/core/FeatureToggleManager.h"
+
 #include "CustomWidgetWithTitle.h"
 #include "CriticalUpdateDialog.h"
 #include "UpdateCenterView.h"
 #include "updates/UpdateManager.h"
+
+#include "../core/AppNotificationBus.h"
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent) {
 
@@ -191,6 +197,31 @@ MainWindow::MainWindow(QWidget* parent)
   notificationBanner = new SilentNotificationBanner(contentContainer);
   contentLayout->addWidget(notificationBanner);
 
+  // Global rolling notification bar hook (used by non-UI code).
+  connect(AppNotificationBus::instance(), &AppNotificationBus::notificationRequested,
+          this,
+          [this](const QString& message, AppNotificationBus::Type type, int durationMs) {
+            if (!notificationBanner) return;
+            SilentNotificationBanner::NotificationType mapped = SilentNotificationBanner::Info;
+            switch (type) {
+              case AppNotificationBus::Type::Success:
+                mapped = SilentNotificationBanner::Success;
+                break;
+              case AppNotificationBus::Type::Error:
+                mapped = SilentNotificationBanner::Error;
+                break;
+              case AppNotificationBus::Type::Warning:
+                mapped = SilentNotificationBanner::Warning;
+                break;
+              case AppNotificationBus::Type::Info:
+              default:
+                mapped = SilentNotificationBanner::Info;
+                break;
+            }
+            notificationBanner->showNotification(message, mapped, durationMs);
+          },
+          Qt::QueuedConnection);
+
   // Initialize views including the new SystemInfoView
   LOG_INFO << "[startup] MainWindow: creating SystemInfoView";
   stackedWidget = new QStackedWidget(this);
@@ -345,13 +376,34 @@ void MainWindow::switchToSystemInfo() {
   }
   
   void MainWindow::switchToOptimize() {
+    LOG_INFO << "MainWindow: user requested Optimize view; refreshing remote flags";
+    {
+      FeatureToggleManager featureToggleManager;
+      featureToggleManager.fetchAndApplyRemoteFlags();
+    }
+
     // Treat all optimization functionality as experimental. Only allow
     // switching to this view when experimental features are effectively
     // enabled (local preference AND backend flag AND online).
-    if (!ApplicationSettings::getInstance().getEffectiveExperimentalFeaturesEnabled()) {
+    auto& appSettings = ApplicationSettings::getInstance();
+    if (!appSettings.getEffectiveExperimentalFeaturesEnabled()) {
+      LOG_INFO << "MainWindow: Optimize view blocked; localExperimental="
+               << (appSettings.getExperimentalFeaturesEnabled() ? "true" : "false")
+               << " remoteInitialized="
+               << (appSettings.areRemoteFeatureFlagsInitialized() ? "true" : "false")
+               << " remoteAllowed="
+               << (appSettings.isRemoteExperimentalAllowed() ? "true" : "false");
       if (notificationBanner) {
+        QString reason = "Optimization features are experimental and are currently disabled.";
+        if (!appSettings.getExperimentalFeaturesEnabled()) {
+          reason = "Enable Experimental Features in Settings to use Optimization.";
+        } else if (!appSettings.areRemoteFeatureFlagsInitialized()) {
+          reason = "Unable to verify experimental features with the backend. Check server connection.";
+        } else if (!appSettings.isRemoteExperimentalAllowed()) {
+          reason = "Experimental features are disabled by the server.";
+        }
         notificationBanner->showNotification(
-          "Optimization features are experimental and are currently disabled.",
+          reason,
           SilentNotificationBanner::Warning,
           5000);
       }

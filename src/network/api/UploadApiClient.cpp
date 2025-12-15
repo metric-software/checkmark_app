@@ -6,6 +6,7 @@
 #include "../serialization/PublicExportBuilder.h"
 #include "../../logging/Logger.h"
 #include "../../ApplicationSettings.h"
+#include "../core/FeatureToggleManager.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -91,6 +92,12 @@ void UploadApiClient::pingServer(PingCallback callback) {
 
 void UploadApiClient::uploadFiles(const QStringList& filePaths, UploadCallback callback) {
     LOG_INFO << "UploadApiClient::uploadFiles called with " << filePaths.size() << " files";
+
+    LOG_INFO << "UploadApiClient: refreshing remote flags before upload gate check";
+    {
+        FeatureToggleManager featureToggleManager;
+        featureToggleManager.fetchAndApplyRemoteFlags();
+    }
 
     if (!ApplicationSettings::getInstance().getEffectiveAutomaticDataUploadEnabled()) {
         QString error = ApplicationSettings::getInstance().isOfflineModeEnabled()

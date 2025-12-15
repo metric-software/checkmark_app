@@ -431,27 +431,6 @@ int main(int argc, char* argv[])
 
       LOG_INFO << "[startup] Early startup sequence begin";
 
-      // Developer bypass: if a SECRETS file exists next to the executable and
-      // contains the magic phrase, unlock all remote-gated experimental and
-      // upload features regardless of backend status.
-      {
-        bool devBypass = false;
-        QString secretsPath = QCoreApplication::applicationDirPath() + "/SECRETS";
-        QFile secretsFile(secretsPath);
-        if (secretsFile.exists() && secretsFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-          QByteArray content = secretsFile.readAll();
-          if (content.contains("CHECKMARK_DEV_BYPASS")) {
-            devBypass = true;
-          }
-          secretsFile.close();
-        }
-
-        if (devBypass) {
-          ApplicationSettings::getInstance().setDeveloperBypassEnabled(true);
-          LOG_WARN << "Developer bypass ENABLED via SECRETS file";
-        }
-      }
-   
       // Fetch remote feature flags from backend. If the backend is offline or
       // returns an invalid response, all remote-controlled features will be
       // treated as disabled for this run.

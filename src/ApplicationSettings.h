@@ -76,10 +76,6 @@ class ApplicationSettings {
   bool getAutomaticDataUploadEnabled() const;
   void setAutomaticDataUploadEnabled(bool enabled);
 
-  // Developer bypass (unlocks all remote-gated features regardless of backend)
-  void setDeveloperBypassEnabled(bool enabled);
-  bool isDeveloperBypassEnabled() const;
-
   // Remote feature flags (controlled by backend)
   // These are ephemeral (not persisted) and are applied on top of local
   // preferences to compute effective behavior.
@@ -105,9 +101,6 @@ class ApplicationSettings {
   bool remoteExperimentalAllowed_ = false;
   bool remoteUploadAllowed_ = false;
   bool remoteFlagsInitialized_ = false;
-
-  // Developer bypass flag (runtime-only, not persisted)
-  bool developerBypassEnabled_ = false;
 
   // Convert between enum and string for storage
   int validationResultToInt(SystemMetrics::ValidationResult result) const;

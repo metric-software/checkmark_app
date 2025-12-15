@@ -8,6 +8,10 @@
 #include <filesystem>
 #include <iostream>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -434,18 +438,27 @@ bool SettingsChecker::AddRustSettings(QVector<SettingCategory>& categories) {
 }
 
 bool SettingsChecker::IsRunningAsAdmin() const {
-  // Check if the application is running with elevated privileges
-  // For now, let's use a simple check - can we write to a protected area?
-  const QString testPath = "C:/Windows/Temp/admin_test.txt";
-  QFile testFile(testPath);
-
-  bool canWrite = testFile.open(QIODevice::WriteOnly);
-  if (canWrite) {
-    testFile.close();
-    testFile.remove();  // Clean up
+  // Check if the application is running with elevated privileges.
+  // Prefer a token membership check over filesystem probes (safer and more accurate).
+#ifdef _WIN32
+  BOOL isMember = FALSE;
+  PSID adminGroup = NULL;
+  SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+  if (!AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+                                DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0,
+                                &adminGroup)) {
+    return false;
   }
 
-  return canWrite;
+  if (!CheckTokenMembership(NULL, adminGroup, &isMember)) {
+    isMember = FALSE;
+  }
+
+  FreeSid(adminGroup);
+  return isMember == TRUE;
+#else
+  return false;
+#endif
 }
 
 }  // namespace optimize_components

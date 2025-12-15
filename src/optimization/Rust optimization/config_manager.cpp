@@ -5,16 +5,71 @@
 #include <set>
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QStorageInfo>
 #include <QThread>
 
 #include "../BackupManager.h"  // Include our new BackupManager
 
 #include "logging/Logger.h"
+
+#include "../../core/AppNotificationBus.h"
+
+namespace {
+
+void notifyRustConfigError(const QString& message) {
+  AppNotificationBus::post(message, AppNotificationBus::Type::Error, 8000);
+}
+
+void notifyRustConfigWarning(const QString& message) {
+  AppNotificationBus::post(message, AppNotificationBus::Type::Warning, 8000);
+}
+
+bool ensureOriginalBackupExists(const QString& targetFilePath,
+                               QString* outErrorMessage) {
+  if (!QFile::exists(targetFilePath)) {
+    return true;  // Nothing to back up.
+  }
+
+  const QString originalPath = targetFilePath + ".original";
+  if (QFile::exists(originalPath)) {
+    return true;  // Preserve first known-good original.
+  }
+
+  if (!QFile::copy(targetFilePath, originalPath)) {
+    if (outErrorMessage) {
+      *outErrorMessage = QStringLiteral("could not create .original backup");
+    }
+    return false;
+  }
+
+  return true;
+}
+
+bool createTimestampedOldBackup(const QString& targetFilePath,
+                               const QString& tag,
+                               QString* outErrorMessage) {
+  if (!QFile::exists(targetFilePath)) {
+    return true;
+  }
+
+  const QString ts = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+  const QString oldPath = targetFilePath + QStringLiteral(".%1_%2").arg(tag, ts);
+  if (!QFile::copy(targetFilePath, oldPath)) {
+    if (outErrorMessage) {
+      *outErrorMessage = QStringLiteral("could not create %1 backup").arg(tag);
+    }
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
 
 namespace optimizations {
 namespace rust {
@@ -419,15 +474,16 @@ bool RustConfigManager::WriteConfigFile(
     return false;
   }
 
-  // Create a backup of the file first
-  QFile origFile(configFilePath);
-  QString tempBackupPath = configFilePath + ".temp";
-  if (QFile::exists(tempBackupPath)) {
-    QFile::remove(tempBackupPath);
-  }
-
-  if (!origFile.copy(tempBackupPath)) {
-    LOG_WARN << "Warning: Failed to create temporary backup of config file.";
+  // Preserve an initial copy of the config before we start modifying it.
+  {
+    QString backupError;
+    if (!ensureOriginalBackupExists(configFilePath, &backupError)) {
+      LOG_ERROR << "Failed to create Rust config backup copy: "
+                << backupError.toStdString();
+      notifyRustConfigError(
+        QStringLiteral("Rust settings update failed: %1").arg(backupError));
+      return false;
+    }
   }
 
   // First, read the entire file content including comments and empty lines
@@ -469,15 +525,12 @@ bool RustConfigManager::WriteConfigFile(
     LOG_WARN << "Warning: Could not read existing config file. Will create a new one.";
   }
 
-  // Open the file for writing
-  QFile file(configFilePath);
+  // Open the file for atomic writing (do not delete/overwrite until commit).
+  QSaveFile file(configFilePath);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-    LOG_ERROR << "Failed to open config file for writing: " << configFilePath.toStdString();
-    // Restore from backup if we couldn't write
-    if (QFile::exists(tempBackupPath)) {
-      QFile::remove(configFilePath);
-      QFile::copy(tempBackupPath, configFilePath);
-    }
+    LOG_ERROR << "Failed to open Rust config file for writing: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings update failed: could not open config file for writing"));
     return false;
   }
 
@@ -563,14 +616,14 @@ bool RustConfigManager::WriteConfigFile(
     }
   }
 
-  file.close();
+  if (!file.commit()) {
+    LOG_ERROR << "Failed to commit Rust config file write: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings update failed: could not commit config file changes"));
+    return false;
+  }
   LOG_INFO << "Successfully updated Rust configuration file with "
             << settings.size() << " settings.";
-
-  // Clean up temporary backup if the write was successful
-  if (QFile::exists(tempBackupPath)) {
-    QFile::remove(tempBackupPath);
-  }
 
   return true;
 }
@@ -595,7 +648,7 @@ bool RustConfigManager::CreateBackupUsingOldSystem() {
 
   if (createVersioned) {
     backupDir = GetVersionedBackupDir();
-    LOG_INFO << "Creating new versioned backup in: " << backupDir.toStdString();
+    LOG_INFO << "Creating new versioned backup in: [path hidden for privacy]";
 
     // Ensure the backup directory exists
     QDir dir(backupDir);
@@ -693,8 +746,7 @@ bool RustConfigManager::CreateBackupUsingOldSystem() {
   }
   file.write(doc.toJson(QJsonDocument::Indented));
   file.close();
-  LOG_INFO << "Successfully created full backup of Rust settings at: "
-            << GetBackupFilePath().toStdString();
+  LOG_INFO << "Successfully created full backup of Rust settings.";
 
   // If creating a versioned backup, write to the versioned location too
   if (createVersioned) {
@@ -704,8 +756,7 @@ bool RustConfigManager::CreateBackupUsingOldSystem() {
     } else {
       versionedFile.write(doc.toJson(QJsonDocument::Indented));
       versionedFile.close();
-      LOG_INFO << "Successfully created versioned backup of Rust settings at: "
-               << versionedFile.fileName().toStdString();
+      LOG_INFO << "Successfully created versioned backup of Rust settings.";
     }
 
     // Also create a raw text copy of the config file
@@ -953,8 +1004,9 @@ bool RustConfigManager::RestoreFromBackup() {
   // Read the backup file
   QFile backupFile(backupPath);
   if (!backupFile.open(QIODevice::ReadOnly)) {
-    LOG_ERROR << "Failed to open backup file for reading: "
-              << backupPath.toStdString();
+    LOG_ERROR << "Failed to open Rust backup file for reading: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not open backup file"));
     return false;
   }
 
@@ -980,12 +1032,36 @@ bool RustConfigManager::RestoreFromBackup() {
     }
 
     if (!rawContent.isEmpty()) {
-      // Write the raw content directly to the config file
-      QFile configFile(configFilePath);
+      {
+        // Preserve existing file before overwriting.
+        QString backupError;
+        if (!ensureOriginalBackupExists(configFilePath, &backupError)) {
+          LOG_ERROR << "Rust restore failed: " << backupError.toStdString();
+          notifyRustConfigError(
+            QStringLiteral("Rust settings restore failed: %1").arg(backupError));
+          return false;
+        }
+        if (!createTimestampedOldBackup(configFilePath, "old", &backupError)) {
+          LOG_ERROR << "Rust restore failed: " << backupError.toStdString();
+          notifyRustConfigError(
+            QStringLiteral("Rust settings restore failed: %1").arg(backupError));
+          return false;
+        }
+      }
+
+      // Write the raw content atomically to the config file.
+      QSaveFile configFile(configFilePath);
       if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&configFile);
         out << rawContent;
-        configFile.close();
+        if (!configFile.commit()) {
+          LOG_ERROR << "Rust restore failed: could not commit config file changes";
+          notifyRustConfigError(
+            QStringLiteral(
+              "Rust settings restore failed: could not commit config file changes"));
+          return false;
+        }
+
         LOG_INFO << "Restored client.cfg using raw content from backup.";
 
         // Re-read settings to update our tracked settings
@@ -1000,7 +1076,9 @@ bool RustConfigManager::RestoreFromBackup() {
 
         return true;
       } else {
-        LOG_ERROR << "Failed to open config file for writing raw content.";
+        LOG_ERROR << "Rust restore failed: could not open config file for writing raw content";
+        notifyRustConfigError(
+          QStringLiteral("Rust settings restore failed: could not open config file for writing"));
         // Continue with normal restoration process as fallback
       }
     }
@@ -1078,6 +1156,15 @@ bool RustConfigManager::RestoreFromBackup() {
 
   // Write the settings to the config file - this will now preserve all existing
   // settings while updating those from the backup
+  {
+    QString backupError;
+    if (!createTimestampedOldBackup(configFilePath, "old", &backupError)) {
+      LOG_ERROR << "Rust restore failed: " << backupError.toStdString();
+      notifyRustConfigError(
+        QStringLiteral("Rust settings restore failed: %1").arg(backupError));
+      return false;
+    }
+  }
   if (!WriteConfigFile(settingsToRestore)) {
     LOG_ERROR << "Failed to write Rust configuration file after restore.";
     return false;
@@ -1111,8 +1198,9 @@ QString RustConfigManager::GetRawConfigContent() const {
 
   QFile file(configFilePath);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    LOG_ERROR << "Failed to open config file for reading: "
-              << configFilePath.toStdString();
+    LOG_ERROR << "Failed to open config file for reading: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings read failed: could not open config file"));
     return QString();
   }
 
@@ -1332,7 +1420,7 @@ bool RustConfigManager::BackupConfigFile(const QString& filename) {
   // If source file doesn't exist, we consider it a success (nothing to back up)
   if (!QFile::exists(sourcePath)) {
     LOG_INFO << "Config file not found, skipping backup: "
-             << sourcePath.toStdString();
+             << filename.toStdString();
     return true;
   }
 
@@ -1343,9 +1431,15 @@ bool RustConfigManager::BackupConfigFile(const QString& filename) {
     backupDir.mkpath(".");
   }
 
-  // Remove existing backup if it exists
+  // Avoid deleting: rotate any existing backup out of the way.
   if (QFile::exists(backupPath)) {
-    QFile::remove(backupPath);
+    const QString ts = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    const QString rotated = backupPath + QStringLiteral(".old_") + ts;
+    if (!QFile::rename(backupPath, rotated)) {
+      LOG_WARN << "Warning: Failed to rotate existing Rust backup file.";
+      notifyRustConfigWarning(
+        QStringLiteral("Rust backup warning: could not rotate an existing backup file"));
+    }
   }
 
   // Create the regular file backup
@@ -1370,8 +1464,9 @@ bool RustConfigManager::CreateJsonBackup(const QString& sourcePath,
                                          const QString& jsonBackupPath) {
   QFile sourceFile(sourcePath);
   if (!sourceFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    LOG_ERROR << "Failed to open source file for JSON backup: "
-              << sourcePath.toStdString();
+    LOG_ERROR << "Failed to open source file for JSON backup: [path hidden for privacy]";
+    notifyRustConfigWarning(
+      QStringLiteral("Rust backup warning: could not read a config file for backup"));
     return false;
   }
 
@@ -1429,12 +1524,10 @@ bool RustConfigManager::CreateJsonBackup(const QString& sourcePath,
     QJsonDocument fileDoc(fileObj);
     jsonBackupFile.write(fileDoc.toJson(QJsonDocument::Indented));
     jsonBackupFile.close();
-    LOG_INFO << "Created human-readable JSON backup at: "
-             << jsonBackupPath.toStdString();
+    LOG_INFO << "Created human-readable JSON backup.";
     return true;
   } else {
-    LOG_ERROR << "Failed to create JSON backup at: "
-              << jsonBackupPath.toStdString();
+    LOG_ERROR << "Failed to create JSON backup.";
     return false;
   }
 }
@@ -1511,20 +1604,41 @@ bool RustConfigManager::RestoreConfigFile(const QString& filename) {
         }
 
         if (!content.isEmpty()) {
-          // Remove current file if it exists
+          // Preserve current file (avoid delete) so we can restore safely.
           if (QFile::exists(targetPath)) {
-            QFile::remove(targetPath);
+            const QString ts =
+              QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+            const QString oldPath = targetPath + QStringLiteral(".old_") + ts;
+            if (!QFile::rename(targetPath, oldPath)) {
+              LOG_ERROR << "Failed to preserve existing config file before restore.";
+              notifyRustConfigError(
+                QStringLiteral("Rust settings restore failed: could not preserve existing %1")
+                  .arg(filename));
+              return false;
+            }
           }
 
-          // Write the content to the target file
-          QFile targetFile(targetPath);
+          // Write the content atomically to the target file.
+          QSaveFile targetFile(targetPath);
           if (targetFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&targetFile);
             out << content;
-            targetFile.close();
+            if (!targetFile.commit()) {
+              LOG_ERROR << "Failed to commit restored config file.";
+              notifyRustConfigError(
+                QStringLiteral("Rust settings restore failed: could not commit %1")
+                  .arg(filename));
+              return false;
+            }
             LOG_INFO << "Successfully restored " << filename.toStdString()
                      << " from JSON backup";
             return true;
+          } else {
+            LOG_ERROR << "Failed to open target file for restore.";
+            notifyRustConfigError(
+              QStringLiteral("Rust settings restore failed: could not write %1")
+                .arg(filename));
+            return false;
           }
         }
       }
@@ -1534,23 +1648,61 @@ bool RustConfigManager::RestoreConfigFile(const QString& filename) {
   // If JSON backup doesn't exist or failed, fall back to regular file backup
   if (!QFile::exists(backupPath)) {
     LOG_INFO << "Backup not found, skipping restore: "
-             << backupPath.toStdString();
+             << filename.toStdString();
     return true;
   }
 
-  // Remove current file if it exists
+  // Preserve current file (avoid delete) so we can restore safely.
   if (QFile::exists(targetPath)) {
-    QFile::remove(targetPath);
+    const QString ts =
+      QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    const QString oldPath = targetPath + QStringLiteral(".old_") + ts;
+    if (!QFile::rename(targetPath, oldPath)) {
+      LOG_ERROR << "Failed to preserve existing config file before restore.";
+      notifyRustConfigError(
+        QStringLiteral("Rust settings restore failed: could not preserve existing %1")
+          .arg(filename));
+      return false;
+    }
   }
 
-  // Restore from backup
-  if (QFile::copy(backupPath, targetPath)) {
-    LOG_INFO << "Successfully restored " << filename.toStdString();
-    return true;
-  } else {
-    LOG_ERROR << "Failed to restore " << filename.toStdString();
+  // Restore from backup atomically.
+  QFile backupFile(backupPath);
+  if (!backupFile.open(QIODevice::ReadOnly)) {
+    LOG_ERROR << "Failed to open backup file for restore: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not read backup for %1")
+        .arg(filename));
     return false;
   }
+  const QByteArray backupBytes = backupFile.readAll();
+  backupFile.close();
+
+  QSaveFile targetFile(targetPath);
+  if (!targetFile.open(QIODevice::WriteOnly)) {
+    LOG_ERROR << "Failed to open target file for restore.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not write %1")
+        .arg(filename));
+    return false;
+  }
+  if (targetFile.write(backupBytes) != backupBytes.size()) {
+    LOG_ERROR << "Failed to write restored data.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not write %1")
+        .arg(filename));
+    return false;
+  }
+  if (!targetFile.commit()) {
+    LOG_ERROR << "Failed to commit restored file.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not commit %1")
+        .arg(filename));
+    return false;
+  }
+
+  LOG_INFO << "Successfully restored " << filename.toStdString();
+  return true;
 }
 
 bool RustConfigManager::BackupAdditionalConfigFiles() {
@@ -1654,8 +1806,8 @@ bool RustConfigManager::BackupConfigFileToDir(const QString& filename,
 
   // If source file doesn't exist, we consider it a success (nothing to back up)
   if (!QFile::exists(sourcePath)) {
-    LOG_ERROR << "Config file not found, skipping backup: "
-              << sourcePath.toStdString();
+    LOG_INFO << "Config file not found, skipping backup: "
+             << filename.toStdString();
     return true;
   }
 
@@ -1668,11 +1820,9 @@ bool RustConfigManager::BackupConfigFileToDir(const QString& filename,
   // Create regular file backup
   bool success = true;
   if (QFile::copy(sourcePath, backupPath)) {
-    LOG_INFO << "Successfully backed up " << filename.toStdString() << " to "
-             << backupDir.toStdString();
+    LOG_INFO << "Successfully backed up " << filename.toStdString();
   } else {
-    LOG_ERROR << "Failed to backup " << filename.toStdString() << " to "
-              << backupDir.toStdString();
+    LOG_ERROR << "Failed to backup " << filename.toStdString();
     success = false;
   }
 
@@ -1836,8 +1986,9 @@ bool RustConfigManager::RestoreFromVersionedBackup(const QString& backupDir) {
   // Check if the specified backup exists
   QDir dir(fullBackupPath);
   if (!dir.exists()) {
-    LOG_ERROR << "Specified backup directory does not exist: "
-              << fullBackupPath.toStdString();
+    LOG_ERROR << "Specified backup directory does not exist.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: selected backup not found"));
     return false;
   }
 
@@ -1845,8 +1996,9 @@ bool RustConfigManager::RestoreFromVersionedBackup(const QString& backupDir) {
   QString jsonBackupPath = fullBackupPath + "/client.cfg.json";
   QFile backupFile(jsonBackupPath);
   if (!backupFile.open(QIODevice::ReadOnly)) {
-    LOG_ERROR << "Failed to open versioned backup file for reading: "
-              << jsonBackupPath.toStdString();
+    LOG_ERROR << "Failed to open versioned backup file for reading.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not open versioned backup"));
     return false;
   }
 
@@ -1874,6 +2026,15 @@ bool RustConfigManager::RestoreFromVersionedBackup(const QString& backupDir) {
 
   // Write the settings to the config file - this will now preserve all existing
   // settings while updating those from the backup
+  {
+    QString backupError;
+    if (!createTimestampedOldBackup(configFilePath, "old", &backupError)) {
+      LOG_ERROR << "Rust restore failed: " << backupError.toStdString();
+      notifyRustConfigError(
+        QStringLiteral("Rust settings restore failed: %1").arg(backupError));
+      return false;
+    }
+  }
   if (!WriteConfigFile(backupSettings)) {
     LOG_ERROR << "Failed to write Rust configuration file after restore.";
     return false;
@@ -1883,8 +2044,7 @@ bool RustConfigManager::RestoreFromVersionedBackup(const QString& backupDir) {
   ReadCurrentSettings();
 
   LOG_INFO << "Restored " << restoredCount
-           << " settings from versioned backup " << backupDir.toStdString()
-           << ".";
+           << " settings from versioned backup.";
 
   // Restore additional files like keys.cfg, etc. from the versioned backup
   QStringList filesToRestore = {"favorites.cfg", "keys.cfg",
@@ -1978,21 +2138,42 @@ bool RustConfigManager::RestoreConfigFileFromDir(const QString& filename,
         }
 
         if (!content.isEmpty()) {
-          // Remove current file if it exists
+          // Preserve current file (avoid delete) so we can restore safely.
           if (QFile::exists(targetPath)) {
-            QFile::remove(targetPath);
+            const QString ts =
+              QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+            const QString oldPath = targetPath + QStringLiteral(".old_") + ts;
+            if (!QFile::rename(targetPath, oldPath)) {
+              LOG_ERROR << "Failed to preserve existing config file before restore.";
+              notifyRustConfigError(
+                QStringLiteral("Rust settings restore failed: could not preserve existing %1")
+                  .arg(filename));
+              return false;
+            }
           }
 
-          // Write content to target file
-          QFile targetFile(targetPath);
-          if (targetFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&targetFile);
-            out << content;
-            targetFile.close();
-            LOG_INFO << "Successfully restored " << filename.toStdString()
-                     << " from JSON backup in " << backupDir.toStdString();
-            return true;
+          // Write content atomically to target file
+          QSaveFile targetFile(targetPath);
+          if (!targetFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            LOG_ERROR << "Failed to open target file for restore.";
+            notifyRustConfigError(
+              QStringLiteral("Rust settings restore failed: could not write %1")
+                .arg(filename));
+            return false;
           }
+          QTextStream out(&targetFile);
+          out << content;
+          if (!targetFile.commit()) {
+            LOG_ERROR << "Failed to commit restored config file.";
+            notifyRustConfigError(
+              QStringLiteral("Rust settings restore failed: could not commit %1")
+                .arg(filename));
+            return false;
+          }
+
+          LOG_INFO << "Successfully restored " << filename.toStdString()
+                   << " from JSON backup";
+          return true;
         }
       }
     }
@@ -2001,25 +2182,61 @@ bool RustConfigManager::RestoreConfigFileFromDir(const QString& filename,
   // If JSON backup doesn't exist or failed, fall back to regular file backup
   if (!QFile::exists(backupPath)) {
     LOG_WARN << "Backup not found, skipping restore: "
-                << backupPath.toStdString();
+             << filename.toStdString();
     return true;
   }
 
-  // Remove current file if it exists
+  // Preserve current file (avoid delete) so we can restore safely.
   if (QFile::exists(targetPath)) {
-    QFile::remove(targetPath);
+    const QString ts =
+      QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    const QString oldPath = targetPath + QStringLiteral(".old_") + ts;
+    if (!QFile::rename(targetPath, oldPath)) {
+      LOG_ERROR << "Failed to preserve existing config file before restore.";
+      notifyRustConfigError(
+        QStringLiteral("Rust settings restore failed: could not preserve existing %1")
+          .arg(filename));
+      return false;
+    }
   }
 
-  // Restore from backup
-  if (QFile::copy(backupPath, targetPath)) {
-    LOG_INFO << "Successfully restored " << filename.toStdString() << " from "
-             << backupDir.toStdString();
-    return true;
-  } else {
-    LOG_ERROR << "Failed to restore " << filename.toStdString() << " from "
-              << backupDir.toStdString();
+  // Restore from backup atomically.
+  QFile backupFile(backupPath);
+  if (!backupFile.open(QIODevice::ReadOnly)) {
+    LOG_ERROR << "Failed to open backup file for restore: [path hidden for privacy]";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not read backup for %1")
+        .arg(filename));
     return false;
   }
+  const QByteArray backupBytes = backupFile.readAll();
+  backupFile.close();
+
+  QSaveFile targetFile(targetPath);
+  if (!targetFile.open(QIODevice::WriteOnly)) {
+    LOG_ERROR << "Failed to open target file for restore.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not write %1")
+        .arg(filename));
+    return false;
+  }
+  if (targetFile.write(backupBytes) != backupBytes.size()) {
+    LOG_ERROR << "Failed to write restored data.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not write %1")
+        .arg(filename));
+    return false;
+  }
+  if (!targetFile.commit()) {
+    LOG_ERROR << "Failed to commit restored file.";
+    notifyRustConfigError(
+      QStringLiteral("Rust settings restore failed: could not commit %1")
+        .arg(filename));
+    return false;
+  }
+
+  LOG_INFO << "Successfully restored " << filename.toStdString();
+  return true;
 }
 
 }  // namespace rust

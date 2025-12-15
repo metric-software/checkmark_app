@@ -26,25 +26,39 @@ NetworkConfig& NetworkConfig::instance() {
 }
 
 void NetworkConfig::setBaseUrl(const QString& url) {
-    QString finalUrl = url;
-    QUrl q(url);
-    if (q.isValid()) {
-        // Enforce https always. If no scheme, default to https.
-        QString scheme = q.scheme().trimmed().toLower();
-        const QString host = q.host().trimmed();
-        int port = q.port();
-        if (scheme.isEmpty() || scheme == QLatin1String("http")) {
-            scheme = QStringLiteral("https");
-            if (port == 80) port = -1; // drop default http port
+    const QString trimmed = url.trimmed();
+
+    // If the user provides an explicit scheme (http/https), preserve it.
+    // If no scheme is provided, default to https for production safety.
+    const QString withScheme = [&trimmed]() -> QString {
+        if (trimmed.contains(QStringLiteral("://"))) {
+            return trimmed;
         }
-        // Keep only scheme://host[:port]
-        if (!host.isEmpty()) {
+        const QString lower = trimmed.toLower();
+        const bool isLocal =
+            lower.startsWith(QStringLiteral("localhost")) ||
+            lower.startsWith(QStringLiteral("127.0.0.1")) ||
+            lower.startsWith(QStringLiteral("[::1]")) ||
+            lower.startsWith(QStringLiteral("::1"));
+        return (isLocal ? QStringLiteral("http://") : QStringLiteral("https://")) + trimmed;
+    }();
+
+    QString finalUrl = trimmed;
+    QUrl q(withScheme);
+    if (q.isValid()) {
+        const QString scheme = q.scheme().trimmed().toLower();
+        const QString host = q.host().trimmed();
+        const int port = q.port();
+
+        // Keep only scheme://host[:port] (strip any path/query/fragment).
+        if (!scheme.isEmpty() && !host.isEmpty()) {
             finalUrl = QString("%1://%2").arg(scheme, host);
             if (port != -1) {
                 finalUrl += ":" + QString::number(port);
             }
         }
     }
+
     m_baseUrl = finalUrl;
 }
 
