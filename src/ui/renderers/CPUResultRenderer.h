@@ -92,6 +92,12 @@ class CPUResultRenderer {
   static QWidget* createComparisonPerformanceBar(
     const QString& label, double value, double comparisonValue, double maxValue,
     const QString& unit, bool lowerIsBetter = true);
+  static QWidget* createComparisonPerformanceBar(
+    const QString& label, double value, double comparisonValue, double maxValue,
+    const QString& unit, const char* description, bool lowerIsBetter = true);
+  static QWidget* createComparisonPerformanceBar(
+    const QString& label, double value, double comparisonValue, double maxValue,
+    const QString& unit, const QString& description, bool lowerIsBetter = true);
   // Update method signature to remove eightThreadVals and add network support
   static QComboBox* createCPUComparisonDropdown(
     const std::map<QString, CPUComparisonData>& comparisonData,

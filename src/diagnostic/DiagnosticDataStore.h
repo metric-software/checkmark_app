@@ -259,6 +259,41 @@ class DiagnosticDataStore {
     std::vector<ProcessInfo> topGpuProcesses;
   };
 
+  // Cross-user aggregated background process metrics (from /pb/diagnostics/general).
+  // Used for "typical" comparison rows in UI renderers.
+  struct BackgroundProcessGeneralMetrics {
+    double totalCpuUsage = -1.0;
+    double totalGpuUsage = -1.0;
+    double systemDpcTime = -1.0;
+    double systemInterruptTime = -1.0;
+
+    struct MemoryMetrics {
+      double commitLimitMB = -1.0;
+      double commitPercent = -1.0;
+      double commitTotalMB = -1.0;
+      double fileCacheMB = -1.0;
+      double kernelNonPagedMB = -1.0;
+      double kernelPagedMB = -1.0;
+      double kernelTotalMB = -1.0;
+      double otherMemoryMB = -1.0;
+      double physicalAvailableMB = -1.0;
+      double physicalTotalMB = -1.0;
+      double physicalUsedMB = -1.0;
+      double physicalUsedPercent = -1.0;
+      double userModePrivateMB = -1.0;
+    };
+
+    MemoryMetrics memoryMetrics;
+
+    struct MemoryMetricsByRamBin {
+      double totalMemoryGB = -1.0;
+      int sampleCount = 0;
+      MemoryMetrics metrics;
+    };
+
+    std::vector<MemoryMetricsByRamBin> memoryMetricsByRam;
+  };
+
   // Add NetworkData structure
   struct NetworkData {
     bool onWifi = false;
@@ -342,6 +377,18 @@ class DiagnosticDataStore {
   }
   void setBackgroundProcessData(const BackgroundProcessData& data) {
     backgroundData = data;
+  }
+
+  // Background process comparison data (cross-user aggregate)
+  const BackgroundProcessGeneralMetrics& getGeneralBackgroundProcessMetrics() const {
+    if (needsReset) {
+      static BackgroundProcessGeneralMetrics emptyData;
+      return emptyData;
+    }
+    return backgroundGeneralMetrics;
+  }
+  void setGeneralBackgroundProcessMetrics(const BackgroundProcessGeneralMetrics& data) {
+    backgroundGeneralMetrics = data;
   }
 
   // Network data getters/setters
@@ -511,6 +558,9 @@ class DiagnosticDataStore {
 
   // Add BackgroundProcessData member
   BackgroundProcessData backgroundData;
+
+  // Background process comparison data (cross-user aggregate)
+  BackgroundProcessGeneralMetrics backgroundGeneralMetrics;
 
   // Add NetworkData member
   NetworkData networkData;

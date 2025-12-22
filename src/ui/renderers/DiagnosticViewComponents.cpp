@@ -10,6 +10,16 @@
 
 namespace DiagnosticViewComponents {
 
+QWidget* createComparisonPerformanceBar(const QString& label, double value,
+                                        double comparisonValue, double maxValue,
+                                        const QString& unit,
+                                        const char* description,
+                                        bool lowerIsBetter) {
+  return createComparisonPerformanceBar(
+    label, value, comparisonValue, maxValue, unit,
+    QString::fromUtf8(description ? description : ""), lowerIsBetter);
+}
+
 QWidget* createMetricBox(const QString& title, const QString& value,
                          const QString& color) {
   QWidget* box = new QWidget();
@@ -263,9 +273,10 @@ QWidget* createStorageAnalysisWidget(
 }
 
 QWidget* createComparisonPerformanceBar(const QString& label, double value,
-                                        double comparisonValue, double maxValue,
-                                        const QString& unit,
-                                        bool lowerIsBetter) {
+                                         double comparisonValue, double maxValue,
+                                         const QString& unit,
+                                         const QString& description,
+                                         bool lowerIsBetter) {
 
   // Use a generic name that will be updated by specific renderers (CPU, Drive,
   // Memory, etc.)
@@ -277,7 +288,7 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   QWidget* container = new QWidget();
   QVBoxLayout* mainLayout = new QVBoxLayout(container);
   mainLayout->setContentsMargins(0, 8, 0, 1);
-  mainLayout->setSpacing(4);  // Spacing between user result and comparison
+  mainLayout->setSpacing(2);  // Compact spacing between elements
 
   // Create title label at the top with color-coded lower/higher is better text
   QString titleText = label;
@@ -508,7 +519,28 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
 
   mainLayout->addLayout(compLayout);
 
+  // Description belongs to the results (bars), so render it below them with
+  // tight spacing.
+  if (!description.trimmed().isEmpty()) {
+    QLabel* descriptionLabel = new QLabel(description.trimmed());
+    descriptionLabel->setObjectName("description_label");
+    descriptionLabel->setWordWrap(true);
+    descriptionLabel->setAlignment(Qt::AlignCenter);
+    descriptionLabel->setTextFormat(Qt::RichText);
+    descriptionLabel->setStyleSheet(
+      "color: #AAAAAA; font-size: 11px; background: transparent; margin-top: 1px;");
+    mainLayout->addWidget(descriptionLabel);
+  }
+
   return container;
+}
+
+QWidget* createComparisonPerformanceBar(const QString& label, double value,
+                                        double comparisonValue, double maxValue,
+                                        const QString& unit,
+                                        bool lowerIsBetter) {
+  return createComparisonPerformanceBar(label, value, comparisonValue, maxValue,
+                                       unit, QString(), lowerIsBetter);
 }
 
 }  // end namespace DiagnosticViewComponents

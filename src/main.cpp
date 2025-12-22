@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QCommandLineParser>
 #include <QFile>
+#include <QTimer>
 
 #include "nvapi.h"
 #include "NvApiDriverSettings.h"
@@ -558,6 +559,21 @@ int main(int argc, char* argv[])
     LOG_INFO << "[startup] MainWindow construct/show begin";
     MainWindow w;
     w.show();
+
+    // Bring the app to the foreground on startup (doesn't stay always-on-top).
+    QTimer::singleShot(0, &w, [&w]() {
+      w.setWindowState((w.windowState() & ~Qt::WindowMinimized) |
+                       Qt::WindowActive);
+      w.raise();
+      w.activateWindow();
+#ifdef _WIN32
+      const auto hwnd = reinterpret_cast<HWND>(w.winId());
+      if (hwnd) {
+        ::SetForegroundWindow(hwnd);
+        ::SetActiveWindow(hwnd);
+      }
+#endif
+    });
     LOG_INFO << "[startup] MainWindow construct/show end";
 
     return app->exec();

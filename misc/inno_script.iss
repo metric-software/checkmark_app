@@ -49,7 +49,7 @@ Source: "..\build\Release\d3dcompiler_47.dll"; DestDir: "{app}"; Flags: ignoreve
 Source: "..\build\Release\checkmark.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Qt and other DLLs from release folder (excluding results directories)
-Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*"
+Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*,*.lib,*.exp,*.pdb,*.ipdb,*.iobj,*.ilk,*.obj,*.pch,*.tlog,*.log,*.lastbuildstate,*.idb,*.iss,*.xml.in,appcast.xml"
 
 ; License files (include only if present)
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

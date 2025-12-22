@@ -96,11 +96,6 @@ DiagnosticView::DiagnosticView(QWidget* parent)
 
   connect(worker, &DiagnosticWorker::diagnosticsFinished, this,
           &DiagnosticView::diagnosticsFinished, Qt::QueuedConnection);
-  connect(worker, &DiagnosticWorker::devToolsResultsReady, this,
-          &DiagnosticView::updateDevToolsResults);
-  // New connection for additional tools results:
-  connect(worker, &DiagnosticWorker::additionalToolsResultsReady, this,
-          &DiagnosticView::updateAdditionalToolsResults);
   // Add to constructor
   connect(worker, &DiagnosticWorker::storageAnalysisReady, this,
           &DiagnosticView::updateStorageResults);
@@ -204,9 +199,6 @@ void DiagnosticView::updateExperimentalFeaturesVisibility() {
     ApplicationSettings::getInstance().getEffectiveExperimentalFeaturesEnabled();
 
   // Update UI based on experimental features status (with null checks)
-  if (developerToolsCheckbox) {
-    developerToolsCheckbox->setVisible(experimentalFeaturesEnabled);
-  }
   if (storageAnalysisCheckbox) {
     storageAnalysisCheckbox->setVisible(experimentalFeaturesEnabled);
   }
@@ -218,9 +210,6 @@ void DiagnosticView::updateExperimentalFeaturesVisibility() {
 
   // Ensure they're unchecked when hidden (with null checks)
   if (!experimentalFeaturesEnabled) {
-    if (developerToolsCheckbox) {
-      developerToolsCheckbox->setChecked(false);
-    }
     if (storageAnalysisCheckbox) {
       storageAnalysisCheckbox->setChecked(false);
     }
@@ -234,19 +223,12 @@ void DiagnosticView::updateExperimentalFeaturesVisibility() {
     cpuThrottlingTestMode = CpuThrottle_None;  // Update the internal state
 
     // Also hide the associated UI elements (with null checks)
-    if (devToolsGroup) {
-      devToolsGroup->setVisible(false);
-    }
-    if (additionalToolsGroup) {
-      additionalToolsGroup->setVisible(false);
-    }
     if (storageAnalysisGroup) {
       storageAnalysisGroup->setVisible(false);
     }
 
     // Update worker settings (with null check)
     if (worker) {
-      worker->setDeveloperMode(false);
       worker->setRunStorageAnalysis(false);
       worker->setSkipCpuThrottlingTests(
         true);  // Skip CPU throttling tests when experimental features are
@@ -365,22 +347,6 @@ void DiagnosticView::setupLayout() {
     LOG_ERROR << "[startup] DiagnosticView: setupLayout: unknown exception while creating drive labels";
   }
 
-  // Initialize dev tools group
-  devToolsGroup = new CustomWidgetWithTitle("Developer Tools", this);
-  devToolsLabel = new QLabel(this);
-  devToolsLabel->setTextFormat(Qt::RichText);
-  devToolsLabel->setWordWrap(true);
-  devToolsLabel->setMinimumWidth(0);
-  devToolsGroup->getContentLayout()->addWidget(devToolsLabel);
-
-  // New: Initialize Additional Tools group
-  additionalToolsGroup = new CustomWidgetWithTitle("Additional Tools", this);
-  additionalToolsLabel = new QLabel(this);
-  additionalToolsLabel->setTextFormat(Qt::RichText);
-  additionalToolsLabel->setWordWrap(true);
-  additionalToolsLabel->setMinimumWidth(0);
-  additionalToolsGroup->getContentLayout()->addWidget(additionalToolsLabel);
-
   // Initialize storage analysis group
   storageAnalysisGroup =
     new CustomWidgetWithTitle("Storage Analysis Results", this);
@@ -420,8 +386,6 @@ void DiagnosticView::setupLayout() {
   scrollLayout->addWidget(gpuWidget);
   scrollLayout->addWidget(sysWidget);
   scrollLayout->addWidget(driveWidget);
-  scrollLayout->addWidget(devToolsGroup);
-  scrollLayout->addWidget(additionalToolsGroup);
   scrollLayout->addWidget(storageAnalysisGroup);
   scrollLayout->addWidget(backgroundProcessWidget);
 
@@ -481,24 +445,12 @@ void DiagnosticView::setupLayout() {
   // Keep these as checkboxes
   runGpuTestsCheckbox = new QCheckBox("GPU Tests", this);
   runCpuBoostTestsCheckbox = new QCheckBox("CPU Boost Tests", this);
-  developerToolsCheckbox = new QCheckBox("Developer Tools", this);
   storageAnalysisCheckbox = new QCheckBox("Storage Analysis", this);
-  
-  // New checkboxes for reorganized layout
-  runCpuTestsCheckbox = new QCheckBox("CPU Tests", this);
-  runMemoryTestsCheckbox = new QCheckBox("Memory Tests", this);
-  runBackgroundTestsCheckbox = new QCheckBox("Background Usage", this);
 
   // Set default checked state for checkboxes
   runGpuTestsCheckbox->setChecked(true);
   runCpuBoostTestsCheckbox->setChecked(true);
-  developerToolsCheckbox->setChecked(false);   // Off by default
   storageAnalysisCheckbox->setChecked(false);  // Off by default
-  
-  // Set default checked state for new checkboxes
-  runCpuTestsCheckbox->setChecked(true);       // On by default
-  runMemoryTestsCheckbox->setChecked(true);    // On by default
-  runBackgroundTestsCheckbox->setChecked(true); // On by default
 
   LOG_INFO << "[startup] DiagnosticView: setupLayout: styling checkboxes";
   // Apply slightly more compact checkbox style
@@ -528,62 +480,64 @@ void DiagnosticView::setupLayout() {
 
   runGpuTestsCheckbox->setStyleSheet(checkboxStyle);
   runCpuBoostTestsCheckbox->setStyleSheet(checkboxStyle);
-  developerToolsCheckbox->setStyleSheet(checkboxStyle);
   storageAnalysisCheckbox->setStyleSheet(checkboxStyle);
-  
-  // Apply style to new checkboxes
-  runCpuTestsCheckbox->setStyleSheet(checkboxStyle);
-  runMemoryTestsCheckbox->setStyleSheet(checkboxStyle);
-  runBackgroundTestsCheckbox->setStyleSheet(checkboxStyle);
 
-  // Create a grid layout for test controls
-  QGridLayout* testControlsGrid = new QGridLayout();
-  testControlsGrid->setSpacing(2);  // Reduced spacing
+  QString alwaysIncludedLabelStyle =
+    "color: #bbbbbb; font-size: 12px; background: transparent; padding: 2px 4px;";
+  QLabel* cpuAlwaysIncludedLabel = new QLabel("CPU Tests always included", this);
+  QLabel* memoryAlwaysIncludedLabel =
+    new QLabel("Memory Tests always included", this);
+  QLabel* backgroundAlwaysIncludedLabel =
+    new QLabel("Background Usage always included", this);
+  cpuAlwaysIncludedLabel->setStyleSheet(alwaysIncludedLabelStyle);
+  memoryAlwaysIncludedLabel->setStyleSheet(alwaysIncludedLabelStyle);
+  backgroundAlwaysIncludedLabel->setStyleSheet(alwaysIncludedLabelStyle);
 
-  // Add "Use Recommended" checkbox at the top spanning all columns
+  // Header controls (always left-aligned, not part of the columns)
   useRecommendedCheckbox = new QCheckBox("Use Recommended", this);
   useRecommendedCheckbox->setStyleSheet(checkboxStyle);
   useRecommendedCheckbox->setChecked(true);  // Enabled by default
-  testControlsGrid->addWidget(useRecommendedCheckbox, 0, 0, 1, 4);
+  controlPanelLayout->addWidget(useRecommendedCheckbox, 0, Qt::AlignLeft);
 
-  // Create consistent spacing between columns
-  testControlsGrid->setColumnStretch(0, 2);  // Estimated time column
-  testControlsGrid->setColumnStretch(1, 2);  // Dropdown column (center) - more stretch
-  testControlsGrid->setColumnStretch(2, 1);  // General checkbox column - less stretch
-  testControlsGrid->setColumnStretch(3, 1);  // CPU checkbox column - less stretch
-
-  // Add estimated time label without a frame, sharing the first row with
-  // controls
   estimatedTimeLabel = new QLabel(this);
   estimatedTimeLabel->setStyleSheet(
     "color: #bbbbbb; font-size: 11px; background: transparent; padding-left: "
     "4px;");
-  // Position the time label directly in the first cell
-  testControlsGrid->addWidget(estimatedTimeLabel, 1, 0, Qt::AlignLeft);
+  controlPanelLayout->addWidget(estimatedTimeLabel, 0, Qt::AlignLeft);
 
   // Initialize estimated time
   updateEstimatedTime();
 
-  // COLUMN 1: Add dropdown menus right-aligned
-  testControlsGrid->addWidget(driveTestModeCombo, 1, 1, Qt::AlignRight);  // Share row with time frame
-  testControlsGrid->addWidget(networkTestModeCombo, 2, 1, Qt::AlignRight);
+  // Create a grid layout for test controls (right-aligned as a group)
+  QGridLayout* testControlsGrid = new QGridLayout();
+  testControlsGrid->setSpacing(2);  // Reduced spacing
+  testControlsGrid->setSizeConstraint(QLayout::SetFixedSize);
 
-  // COLUMN 2: General test checkboxes left-aligned
-  testControlsGrid->addWidget(runGpuTestsCheckbox, 1, 2, Qt::AlignLeft);  // Share row with time frame
-  testControlsGrid->addWidget(runMemoryTestsCheckbox, 2, 2, Qt::AlignLeft);
-  testControlsGrid->addWidget(runBackgroundTestsCheckbox, 3, 2, Qt::AlignLeft);
-  
-  // Experimental checkboxes (will be hidden when experimental features are disabled)
-  testControlsGrid->addWidget(developerToolsCheckbox, 4, 2, Qt::AlignLeft);
-  testControlsGrid->addWidget(storageAnalysisCheckbox, 5, 2, Qt::AlignLeft);
+  // COLUMN 0: Always-included tests (informational)
+  testControlsGrid->addWidget(cpuAlwaysIncludedLabel, 0, 0, Qt::AlignLeft);
+  testControlsGrid->addWidget(memoryAlwaysIncludedLabel, 1, 0, Qt::AlignLeft);
+  testControlsGrid->addWidget(backgroundAlwaysIncludedLabel, 2, 0,
+                              Qt::AlignLeft);
 
-  // COLUMN 3: CPU-related test controls left-aligned
-  testControlsGrid->addWidget(runCpuTestsCheckbox, 1, 3, Qt::AlignLeft);  // Master CPU tests checkbox
-  testControlsGrid->addWidget(runCpuBoostTestsCheckbox, 2, 3, Qt::AlignLeft);  // CPU boost sub-option
-  testControlsGrid->addWidget(cpuThrottlingTestModeCombo, 3, 3, Qt::AlignLeft);  // CPU throttling sub-option
+  // COLUMN 1: Dropdown menus
+  testControlsGrid->addWidget(driveTestModeCombo, 0, 1, Qt::AlignLeft);
+  testControlsGrid->addWidget(networkTestModeCombo, 1, 1, Qt::AlignLeft);
+  testControlsGrid->addWidget(cpuThrottlingTestModeCombo, 2, 1, Qt::AlignLeft);
 
-  // Add the grid layout to the control panel
-  controlPanelLayout->addLayout(testControlsGrid);
+  // COLUMN 2: Optional checkboxes
+  testControlsGrid->addWidget(runGpuTestsCheckbox, 0, 2, Qt::AlignLeft);
+  testControlsGrid->addWidget(runCpuBoostTestsCheckbox, 1, 2, Qt::AlignLeft);
+
+  // Experimental checkbox (hidden when experimental features are disabled)
+  testControlsGrid->addWidget(storageAnalysisCheckbox, 2, 2, Qt::AlignLeft);
+
+  // Right-align the whole grid as a group, while keeping items left-aligned
+  // within each column.
+  QHBoxLayout* testControlsRow = new QHBoxLayout();
+  testControlsRow->setContentsMargins(0, 0, 0, 0);
+  testControlsRow->addStretch(1);
+  testControlsRow->addLayout(testControlsGrid);
+  controlPanelLayout->addLayout(testControlsRow);
 
   LOG_INFO << "[startup] DiagnosticView: setupLayout: connecting dropdowns";
   // Connect signals from combo boxes
@@ -611,16 +565,6 @@ void DiagnosticView::setupLayout() {
           &DiagnosticView::setRunGpuTests);
   connect(runCpuBoostTestsCheckbox, &QCheckBox::toggled, this,
           &DiagnosticView::setRunCpuBoostTests);
-  connect(developerToolsCheckbox, &QCheckBox::toggled, this,
-          &DiagnosticView::setDeveloperMode);
-  
-  // Connect new checkbox signals
-  connect(runCpuTestsCheckbox, &QCheckBox::toggled, this,
-          &DiagnosticView::setRunCpuTests);
-  connect(runMemoryTestsCheckbox, &QCheckBox::toggled, this,
-          &DiagnosticView::setRunMemoryTests);
-  connect(runBackgroundTestsCheckbox, &QCheckBox::toggled, this,
-          &DiagnosticView::setRunBackgroundTests);
   
   // Connect storage analysis checkbox to update button state
   connect(storageAnalysisCheckbox, &QCheckBox::toggled, [this](bool checked) {
@@ -680,9 +624,8 @@ void DiagnosticView::setupLayout() {
   {
     std::vector<QObject*> widgetsToBlock = {
       driveTestModeCombo, networkTestModeCombo, cpuThrottlingTestModeCombo,
-      runGpuTestsCheckbox, runCpuBoostTestsCheckbox, developerToolsCheckbox,
-      storageAnalysisCheckbox, runCpuTestsCheckbox, runMemoryTestsCheckbox,
-      runBackgroundTestsCheckbox, useRecommendedCheckbox};
+      runGpuTestsCheckbox, runCpuBoostTestsCheckbox, storageAnalysisCheckbox,
+      useRecommendedCheckbox};
     std::vector<std::unique_ptr<QSignalBlocker>> blockers;
     blockers.reserve(widgetsToBlock.size());
     for (QObject* obj : widgetsToBlock) {
@@ -746,8 +689,6 @@ void DiagnosticView::setupLayout() {
   gpuWidget->setVisible(false);
   sysWidget->setVisible(false);
   driveWidget->setVisible(false);
-  devToolsGroup->setVisible(false);
-  additionalToolsGroup->setVisible(false);
   storageAnalysisGroup->setVisible(false);
   backgroundProcessWidget->setVisible(false);
 
@@ -931,7 +872,6 @@ void DiagnosticView::onRunDiagnostics() {
           worker->setSkipDriveTests(driveTestMode == DriveTest_None);
           worker->setSystemDriveOnlyMode(driveTestMode == DriveTest_SystemOnly);
           worker->setSkipGpuTests(!runGpuTests);
-          worker->setDeveloperMode(developerMode);
           worker->setSkipCpuThrottlingTests(cpuThrottlingTestMode ==
                                             CpuThrottle_None);
           worker->setExtendedCpuThrottlingTests(cpuThrottlingTestMode ==
@@ -945,12 +885,12 @@ void DiagnosticView::onRunDiagnostics() {
                                           NetworkTest_Extended);
           
           // Configure new test settings
-          worker->setDriveTestMode(static_cast<int>(driveTestMode));
-          worker->setNetworkTestMode(static_cast<int>(networkTestMode));
-          worker->setCpuThrottlingTestMode(static_cast<int>(cpuThrottlingTestMode));
-          worker->setRunMemoryTests(runMemoryTestsCheckbox && runMemoryTestsCheckbox->isChecked());
-          worker->setRunBackgroundTests(runBackgroundTestsCheckbox && runBackgroundTestsCheckbox->isChecked());
-          worker->setUseRecommendedSettings(useRecommendedCheckbox && useRecommendedCheckbox->isChecked());
+           worker->setDriveTestMode(static_cast<int>(driveTestMode));
+           worker->setNetworkTestMode(static_cast<int>(networkTestMode));
+           worker->setCpuThrottlingTestMode(static_cast<int>(cpuThrottlingTestMode));
+           worker->setRunMemoryTests(true);      // Always included
+           worker->setRunBackgroundTests(true);  // Always included
+           worker->setUseRecommendedSettings(useRecommendedCheckbox && useRecommendedCheckbox->isChecked());
 
           LOG_INFO << "Worker settings configured successfully";
         } catch (const std::exception& e) {
@@ -1418,18 +1358,6 @@ void DiagnosticView::connectWorkerSignals() {
         connect(worker, &DiagnosticWorker::backgroundProcessTestCompleted, this,
                 &DiagnosticView::updateBackgroundProcessResults,
                 Qt::QueuedConnection);
-      successCount += success ? 1 : 0;
-
-      success =
-        success &&
-        connect(worker, &DiagnosticWorker::devToolsResultsReady, this,
-                &DiagnosticView::updateDevToolsResults, Qt::QueuedConnection);
-      successCount += success ? 1 : 0;
-
-      success = success &&
-                connect(worker, &DiagnosticWorker::additionalToolsResultsReady,
-                        this, &DiagnosticView::updateAdditionalToolsResults,
-                        Qt::QueuedConnection);
       successCount += success ? 1 : 0;
 
       success =
@@ -2096,67 +2024,6 @@ void DiagnosticView::setRunGpuTests(bool run) {
   updateRunButtonState();
 }
 
-void DiagnosticView::setDeveloperMode(bool enabled) {
-  developerMode = enabled;
-  if (worker) {
-    worker->setDeveloperMode(enabled);
-  }
-  if (devToolsGroup) {
-    devToolsGroup->setVisible(enabled);
-  }
-  if (additionalToolsGroup) {
-    additionalToolsGroup->setVisible(
-      enabled);  // Also show/hide additional tools group
-  }
-  updateRunButtonState();
-}
-
-void DiagnosticView::updateDevToolsResults(const QString& result) {
-  // Check if label exists, recreate if needed
-  if (!devToolsLabel) {
-    LOG_INFO << "DevTools: Recreating label that was deleted";
-    devToolsLabel = new QLabel(this);
-    devToolsLabel->setTextFormat(Qt::RichText);
-    devToolsLabel->setWordWrap(true);
-    devToolsLabel->setMinimumWidth(0);
-
-    // Add to layout if possible
-    if (devToolsGroup && devToolsGroup->getContentLayout()) {
-      devToolsGroup->getContentLayout()->addWidget(devToolsLabel);
-    }
-  }
-
-  devToolsLabel->setText(result);
-  if (devToolsGroup) {
-    devToolsGroup->setVisible(true);
-  }
-}
-
-// Add new slot to update the Additional Tools label
-void DiagnosticView::updateAdditionalToolsResults(const QString& result) {
-  // Check if label exists, recreate if needed
-  if (!additionalToolsLabel) {
-    LOG_INFO << "AdditionalTools: Recreating label that was deleted"
-             ;
-    additionalToolsLabel = new QLabel(this);
-    additionalToolsLabel->setTextFormat(Qt::RichText);
-    additionalToolsLabel->setWordWrap(true);
-    additionalToolsLabel->setMinimumWidth(0);
-
-    // Add to layout if possible
-    if (additionalToolsGroup && additionalToolsGroup->getContentLayout()) {
-      additionalToolsGroup->getContentLayout()->addWidget(additionalToolsLabel);
-    }
-  }
-
-  additionalToolsLabel->setText(result);
-  if (additionalToolsGroup) {
-    additionalToolsGroup->setVisible(true);
-  }
-}
-
-// Add implementation of formatter and slot
-
 void DiagnosticView::updateStorageResults(
   const StorageAnalysis::AnalysisResults& results) {
   // Check if label exists, recreate if needed
@@ -2586,8 +2453,7 @@ void DiagnosticView::setCpuThrottlingTestMode(int index) {
 void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
   // Some builds may strip optional controls (like manual upload buttons); guard against missing widgets
   if (!driveTestModeCombo || !networkTestModeCombo || !cpuThrottlingTestModeCombo ||
-      !runGpuTestsCheckbox || !runCpuBoostTestsCheckbox || !developerToolsCheckbox ||
-      !storageAnalysisCheckbox) {
+      !runGpuTestsCheckbox || !runCpuBoostTestsCheckbox || !storageAnalysisCheckbox) {
     LOG_WARN << "DiagnosticView: skipping recommended settings update because one or more controls are missing";
     return;
   }
@@ -2667,7 +2533,6 @@ void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
   cpuThrottlingTestModeCombo->setEnabled(!useRecommended);
   runGpuTestsCheckbox->setEnabled(!useRecommended);
   runCpuBoostTestsCheckbox->setEnabled(!useRecommended);
-  developerToolsCheckbox->setEnabled(!useRecommended);
   storageAnalysisCheckbox->setEnabled(!useRecommended);
 
   // Apply visual styling based on enabled state
@@ -2679,7 +2544,6 @@ void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
 
     runGpuTestsCheckbox->setStyleSheet(disabledCheckboxStyle);
     runCpuBoostTestsCheckbox->setStyleSheet(disabledCheckboxStyle);
-    developerToolsCheckbox->setStyleSheet(disabledCheckboxStyle);
     storageAnalysisCheckbox->setStyleSheet(disabledCheckboxStyle);
   } else {
     // Reset to normal style
@@ -2689,7 +2553,6 @@ void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
 
     runGpuTestsCheckbox->setStyleSheet(enabledCheckboxStyle);
     runCpuBoostTestsCheckbox->setStyleSheet(enabledCheckboxStyle);
-    developerToolsCheckbox->setStyleSheet(enabledCheckboxStyle);
     storageAnalysisCheckbox->setStyleSheet(enabledCheckboxStyle);
   }
 
@@ -2715,9 +2578,6 @@ void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
     runCpuBoostTests = true;
 
     // Disable experimental features
-    developerToolsCheckbox->setChecked(false);
-    developerMode = false;
-
     storageAnalysisCheckbox->setChecked(false);
 
     // Always save results (with null check)
@@ -2733,7 +2593,6 @@ void DiagnosticView::setUseRecommendedSettings(bool useRecommended) {
       worker->setSkipCpuThrottlingTests(true);
       worker->setExtendedCpuThrottlingTests(false);
       worker->setRunCpuBoostTests(true);
-      worker->setDeveloperMode(false);
       worker->setRunStorageAnalysis(false);
     }
 
@@ -2871,12 +2730,6 @@ void DiagnosticView::clearAllResults() {
     driveInfoLabels.clear();
     drivePerfLabels.clear();
 
-    clearWidgetLayout(devToolsGroup);
-    devToolsLabel = nullptr;
-
-    clearWidgetLayout(additionalToolsGroup);
-    additionalToolsLabel = nullptr;
-
     clearWidgetLayout(storageAnalysisGroup);
     storageAnalysisLabel = nullptr;
 
@@ -2976,58 +2829,23 @@ void DiagnosticView::clearAllResults() {
   }
 }
 
-// New slot implementations for test control checkboxes
-void DiagnosticView::setRunCpuTests(bool run) {
-  // When master CPU tests checkbox is toggled, enable/disable CPU sub-options
-  if (runCpuBoostTestsCheckbox) {
-    runCpuBoostTestsCheckbox->setEnabled(run);
-  }
-  if (cpuThrottlingTestModeCombo) {
-    cpuThrottlingTestModeCombo->setEnabled(run);
-  }
-  
-  // If CPU tests are disabled, uncheck sub-options
-  if (!run) {
-    if (runCpuBoostTestsCheckbox) {
-      runCpuBoostTestsCheckbox->setChecked(false);
-    }
-    if (cpuThrottlingTestModeCombo) {
-      cpuThrottlingTestModeCombo->setCurrentIndex(0);  // Set to "Skip CPU Throttling"
-    }
-  }
-  
-  updateRunButtonState();
-}
-
-void DiagnosticView::setRunMemoryTests(bool run) {
-  if (worker) {
-    worker->setRunMemoryTests(run);
-  }
-  updateRunButtonState();
-}
-
-void DiagnosticView::setRunBackgroundTests(bool run) {
-  if (worker) {
-    worker->setRunBackgroundTests(run);
-  }
-  updateRunButtonState();
-}
-
 void DiagnosticView::updateRunButtonState() {
+  // Avoid re-enabling the button while a run is in progress.
+  if (workerThread && workerThread->isRunning()) {
+    return;
+  }
+
   // Check if at least one test is enabled
-  bool anyTestEnabled = false;
+  bool anyTestEnabled = true;  // CPU/Memory/Background are always included
   
   // Check main test categories
   if (runGpuTestsCheckbox && runGpuTestsCheckbox->isChecked()) anyTestEnabled = true;
-  if (runMemoryTestsCheckbox && runMemoryTestsCheckbox->isChecked()) anyTestEnabled = true;
-  if (runBackgroundTestsCheckbox && runBackgroundTestsCheckbox->isChecked()) anyTestEnabled = true;
   
   // Check CPU tests (either boost tests or throttling tests)
-  if (runCpuTestsCheckbox && runCpuTestsCheckbox->isChecked()) {
-    if ((runCpuBoostTestsCheckbox && runCpuBoostTestsCheckbox->isChecked()) ||
-        (cpuThrottlingTestModeCombo && cpuThrottlingTestModeCombo->getCurrentIndex() > 0)) {
-      anyTestEnabled = true;
-    }
+  if ((runCpuBoostTestsCheckbox && runCpuBoostTestsCheckbox->isChecked()) ||
+      (cpuThrottlingTestModeCombo &&
+       cpuThrottlingTestModeCombo->getCurrentIndex() > 0)) {
+    anyTestEnabled = true;
   }
   
   // Check drive tests
@@ -3037,7 +2855,6 @@ void DiagnosticView::updateRunButtonState() {
   if (networkTestModeCombo && networkTestModeCombo->getCurrentIndex() > 0) anyTestEnabled = true;
   
   // Check experimental features
-  if (developerToolsCheckbox && developerToolsCheckbox->isChecked()) anyTestEnabled = true;
   if (storageAnalysisCheckbox && storageAnalysisCheckbox->isChecked()) anyTestEnabled = true;
   
   // Update run button state

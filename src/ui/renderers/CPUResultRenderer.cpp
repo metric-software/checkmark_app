@@ -1079,9 +1079,25 @@ QWidget* CPUResultRenderer::createComparisonPerformanceBar(
   const QString& label, double value, double comparisonValue, double maxValue,
   const QString& unit, bool lowerIsBetter) {
 
+  return CPUResultRenderer::createComparisonPerformanceBar(
+    label, value, comparisonValue, maxValue, unit, QString(), lowerIsBetter);
+}
+
+QWidget* CPUResultRenderer::createComparisonPerformanceBar(
+  const QString& label, double value, double comparisonValue, double maxValue,
+  const QString& unit, const char* description, bool lowerIsBetter) {
+  return CPUResultRenderer::createComparisonPerformanceBar(
+    label, value, comparisonValue, maxValue, unit,
+    QString::fromUtf8(description ? description : ""), lowerIsBetter);
+}
+
+QWidget* CPUResultRenderer::createComparisonPerformanceBar(
+  const QString& label, double value, double comparisonValue, double maxValue,
+  const QString& unit, const QString& description, bool lowerIsBetter) {
+
   // Use the shared component from DiagnosticViewComponents
   return DiagnosticViewComponents::createComparisonPerformanceBar(
-    label, value, comparisonValue, maxValue, unit, lowerIsBetter);
+    label, value, comparisonValue, maxValue, unit, description, lowerIsBetter);
 }
 
 QWidget* CPUResultRenderer::createCPUResultWidget(
@@ -1428,7 +1444,8 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
 
   // Add comparison performance bars for CPU tests
   cpuTestsLayout->addWidget(createComparisonPerformanceBar(
-    "Single-core", singleCoreTime, 0, maxCoreTime, "ms"));
+    "Single-core", singleCoreTime, 0, maxCoreTime, "ms",
+    "Measures single-thread CPU performance and boost behavior. Lower times usually mean snappier app responsiveness and better performance in lightly-threaded games and tools."));
 
   // Only add 4-thread test if we have valid data from user's system
   if (cpuData.fourThreadTime > 0) {
@@ -1436,7 +1453,9 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     // comparison handler
     QWidget* fourThreadBar =
       DiagnosticViewComponents::createComparisonPerformanceBar(
-        "4-Thread", cpuData.fourThreadTime, 0, maxCoreTime, "ms", true);
+        "4-Thread", cpuData.fourThreadTime, 0, maxCoreTime, "ms",
+        "A small multi-thread test that stresses scheduling and sustained boost across a few cores. Lower times generally indicate better performance in tasks that use several threads.",
+        true);
 
     // Find the bar element inside the returned container and set its object name
     QWidget* innerBar = fourThreadBar->findChild<QWidget*>("comparison_bar");
@@ -1451,26 +1470,31 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
 
   // Prime calculation test
   cpuTestsLayout->addWidget(createComparisonPerformanceBar(
-    "Prime calculation", primeTime, 0, maxPrimeTime, "ms"));
+    "Prime calculation", primeTime, 0, maxPrimeTime, "ms",
+    "A math-heavy compute test. Lower times generally indicate stronger raw CPU throughput and can also reflect how well the CPU sustains clocks under load."));
 
   cpuTestsLayout->addSpacing(8);
 
   // SIMD tests
   cpuTestsLayout->addWidget(createComparisonPerformanceBar(
-    "Scalar ops", simdScalar, 0, maxSimdTime, "μs"));
+    "Scalar ops", simdScalar, 0, maxSimdTime, "μs",
+    "A tight CPU instruction loop that highlights per-core execution efficiency. Lower times generally mean better low-level CPU performance."));
   cpuTestsLayout->addWidget(
-    createComparisonPerformanceBar("AVX ops", simdAvx, 0, maxSimdTime, "μs"));
+    createComparisonPerformanceBar("AVX ops", simdAvx, 0, maxSimdTime, "μs",
+                                   "Uses wide vector (AVX) instructions. Lower times generally mean stronger SIMD throughput, but some CPUs may downclock under AVX-heavy loads."));
 
   cpuTestsLayout->addSpacing(8);
 
   // Add Cold Start Response Test section if data is available
   if (coldStartAvg > 0) {
+    const QString coldStartDescription =
+      "Measures response time when data is not already cached (a \"cold\" workload). Lower is better; higher values can point to slower memory, suboptimal memory settings, or heavy background activity.";
     // Create the cold start bar with the specific object name to match the
     // comparison handler
     QWidget* coldStartBar =
       DiagnosticViewComponents::createComparisonPerformanceBar(
         "Cold Start Response", coldStartAvg, 0, coldStartVals.second, "μs",
-        true);
+        QString(), true);
 
     // Find the bar element inside the returned container and set its object name
     QWidget* innerBar = coldStartBar->findChild<QWidget*>("comparison_bar");
@@ -1523,6 +1547,16 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
 
     // Add the detailed widget to the main layout
     cpuTestsLayout->addWidget(coldStartDetailWidget);
+
+    // Cold start includes a detail table; render the description after it.
+    QLabel* coldStartDescriptionLabel = new QLabel(coldStartDescription);
+    coldStartDescriptionLabel->setObjectName("description_label");
+    coldStartDescriptionLabel->setWordWrap(true);
+    coldStartDescriptionLabel->setAlignment(Qt::AlignCenter);
+    coldStartDescriptionLabel->setTextFormat(Qt::RichText);
+    coldStartDescriptionLabel->setStyleSheet(
+      "color: #AAAAAA; font-size: 11px; background: transparent; margin-top: 1px;");
+    cpuTestsLayout->addWidget(coldStartDescriptionLabel);
   }
 
   // Game Simulation section
@@ -1540,12 +1574,18 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
 
   // Add comparison performance bars for game simulation
   gameSimLayout->addWidget(createComparisonPerformanceBar(
-    "Small (L3)", gameSimSmall / 1000000, 0, maxUPS / 1000000, "M ups", false));
+    "Small (L3)", gameSimSmall / 1000000, 0, maxUPS / 1000000, "M ups",
+    "A game-like CPU + memory workload intended to better predict real game performance than pure CPU micro-benchmarks. <b>Small</b> uses a small working set, so cache (L3) handles most of the data.",
+    false));
   gameSimLayout->addWidget(createComparisonPerformanceBar(
-    "Medium", gameSimMedium / 1000000, 0, maxUPS / 1000000, "M ups", false));
+    "Medium", gameSimMedium / 1000000, 0, maxUPS / 1000000, "M ups",
+    "A game-like CPU + memory workload intended to better predict real game performance than pure CPU micro-benchmarks. <b>Medium</b> has a moderate working set, split between cache and RAM.",
+    false));
   gameSimLayout->addWidget(
     createComparisonPerformanceBar("Large (RAM)", gameSimLarge / 1000000, 0,
-                                   maxUPS / 1000000, "M ups", false));
+                                   maxUPS / 1000000, "M ups",
+                                   "A game-like CPU + memory workload intended to better predict real game performance than pure CPU micro-benchmarks. <b>Large</b> is memory intensive, with much more traffic to RAM.",
+                                   false));
 
   // Add test boxes to the grid layout
   basicLayout->addWidget(cpuTestsBox, 1, 0, 1,

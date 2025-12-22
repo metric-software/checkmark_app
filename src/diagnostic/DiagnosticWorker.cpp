@@ -61,20 +61,14 @@ std::string wstringToString(const std::wstring& wstr) {
 
 DiagnosticWorker::DiagnosticWorker(QObject* parent)
     : QObject(parent),
-      devToolsChecker(new DevToolsChecker(this)), skipDriveTests(false),
-      skipGpuTests(false), developerMode(false), runStorageAnalysis(false),
+      skipDriveTests(false),
+      skipGpuTests(false), runStorageAnalysis(false),
       saveResults(false),
       skipCpuThrottlingTests(true)  // Default to true (skip tests)
       ,
       extendedCpuThrottlingTests(false), runCpuBoostTests(true),
       skipNetworkTests(false), runNetworkTests(true),
       extendedNetworkTests(false) {
-  // Connect signals from DevToolsChecker
-  connect(devToolsChecker, &DevToolsChecker::logMessage, this,
-          &DiagnosticWorker::log);
-  connect(devToolsChecker, &DevToolsChecker::toolCheckCompleted, this,
-          &DiagnosticWorker::devToolsResultsReady);
-
   // Note: We no longer create a thread here - it's managed by DiagnosticView
 
   // Connect testStarted signal to update current test name
@@ -399,14 +393,6 @@ void DiagnosticWorker::runDiagnosticsInternal() {
     log("Network tests skipped.");
     currentProgress += NETWORK_TEST_WEIGHT;
     emit progressUpdated(currentProgress);
-    ensureTestBreak();
-  }
-
-  // Developer tools tests
-  if (developerMode) {
-    emit testStarted("Developer Tools Analysis");
-    emit progressUpdated(currentProgress);
-    runDeveloperToolsTest();
     ensureTestBreak();
   }
 
@@ -1274,28 +1260,6 @@ void DiagnosticWorker::processBackgroundMonitorResults(
 
   // Emit the result
   emit backgroundProcessTestCompleted(backgroundResult);
-}
-
-void DiagnosticWorker::addResult(const QString& tool, bool found,
-                                 const QString& version) {
-  log(QString("[%1] Status: %2").arg(tool).arg(found ? "Found" : "Not Found"));
-  if (!version.isEmpty()) {
-    log(QString("[%1] Version: %2").arg(tool, version));
-  }
-  log("-----------------------------------------------");
-
-  devToolsResults += QString("%1:\t<span style='color: %2;'>%3</span><br>")
-                       .arg(tool)
-                       .arg(found ? "#0078d4" : "#ff4444")
-                       .arg(found ? version : QString("Not Found"));
-}
-
-void DiagnosticWorker::runDeveloperToolsTest() {
-  log("\n===============================================");
-  log("Starting Developer Tools Check");
-  log("===============================================\n");
-
-  devToolsChecker->checkAllTools();
 }
 
 void DiagnosticWorker::log(const QString& message) const {  // Add const here
@@ -2315,7 +2279,6 @@ QJsonObject DiagnosticWorker::resultsToJson() const {
   testSettings["run_cpu_boost_tests"] = runCpuBoostTests;
   testSettings["run_memory_tests"] = runMemoryTests;
   testSettings["run_background_tests"] = runBackgroundTests;
-  testSettings["developer_mode"] = developerMode;
   testSettings["run_storage_analysis"] = runStorageAnalysis;
   testSettings["use_recommended_settings"] = useRecommendedSettings;
   metadata["test_settings"] = testSettings;

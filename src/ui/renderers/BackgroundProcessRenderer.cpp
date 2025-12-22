@@ -1,5 +1,6 @@
 #include "BackgroundProcessRenderer.h"
 
+#include <cmath>
 #include <iostream>
 
 #include <QRegularExpression>
@@ -75,7 +76,6 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
 
     // Import process data from DiagnosticDataStore
     QMap<QString, ProcessInfo> processes;
-    QStringList recommendations;
 
     // Process top CPU processes
     for (const auto& proc : bgData.topCpuProcesses) {
@@ -181,15 +181,9 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
 
     // Parse additional information from result string
     QStringList lines = result.split("\n");
-    bool inRecommendationsSection = false;
     QString currentProcessName;
 
     for (const QString& line : lines) {
-      if (line.contains("Performance Recommendations:")) {
-        inRecommendationsSection = true;
-        continue;
-      }
-
       // Look for process lines with DPC/interrupt markers
       if (line.contains("[DPC]") || line.contains("[Interrupt]")) {
         for (auto it = processes.begin(); it != processes.end(); ++it) {
@@ -203,11 +197,6 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
             break;
           }
         }
-      }
-
-      // Collect recommendations
-      if (inRecommendationsSection && line.trimmed().startsWith("•")) {
-        recommendations.append(line.trimmed().mid(1).trimmed());
       }
 
       // Look for CPU spike information
@@ -233,6 +222,307 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
     // Create the HTML display content
     QString html = "<h3>System Resource Usage</h3>";
 
+    const auto& general =
+      DiagnosticDataStore::getInstance().getGeneralBackgroundProcessMetrics();
+
+    const QString borderColor = "#3a3a3a";
+    const QString thBase =
+      "text-align: left; padding: 6px 8px; border: 1px solid " + borderColor +
+      "; color: #BBBBBB; font-weight: 600; font-size: 0.9em;";
+    const QString tdBase =
+      "padding: 6px 8px; border: 1px solid " + borderColor + ";";
+
+    auto formatPercent = [](double value, int decimals) -> QString {
+      if (value < 0.0) return QStringLiteral("-");
+      return QString::number(value, 'f', decimals) + "%";
+    };
+    auto formatMBps = [](double value) -> QString {
+      if (value < 0.0) return QStringLiteral("-");
+      return QString::number(value, 'f', 1) + " MB/s";
+    };
+    auto formatMB = [](double value) -> QString {
+      if (value < 0.0) return QStringLiteral("-");
+      return QString::number(value, 'f', 1) + " MB";
+    };
+    auto formatGB = [](double value) -> QString {
+      if (value < 0.0) return QStringLiteral("-");
+      return QString::number(value, 'f', 1) + " GB";
+    };
+
+    auto renderMetricBlock = [](const QString& title,
+                                const QString& bodyHtml) -> QString {
+      return QString(
+               "<div style='margin: 10px 0 16px 0;'>"
+               "<div style='font-weight: 600; margin-bottom: 2px;'>%1</div>"
+               "%2"
+               "</div>")
+        .arg(title, bodyHtml);
+    };
+
+    auto userValueSpan = [](const QString& text, const QString& color) -> QString {
+      return "<span style='color: " + color + "; font-weight: 600;'>" + text +
+             "</span>";
+    };
+
+    auto renderAvgPeakTable = [&](const QString& userAvg,
+                                  const QString& userPeak,
+                                  const QString& typicalAvg,
+                                  const QString& typicalPeak,
+                                  bool showTypical) -> QString {
+      QString t;
+      t += "<table style='width: 100%; border-collapse: collapse; margin-top: 4px;'>";
+      t += "<tr>";
+      t += "<th style='" + thBase + "'>Avg</th>";
+      t += "<th style='" + thBase + "'>Peak</th>";
+      t += "</tr>";
+      t += "<tr>";
+      t += "<td style='" + tdBase + "'>" + userAvg + "</td>";
+      t += "<td style='" + tdBase + "'>" + userPeak + "</td>";
+      t += "</tr>";
+      if (showTypical) {
+        t += "<tr>";
+        t += "<td style='" + tdBase +
+             "'><span style='color: #9a9a9a;'>typical: " + typicalAvg +
+             "</span></td>";
+        t += "<td style='" + tdBase +
+             "'><span style='color: #9a9a9a;'>typical: " + typicalPeak +
+             "</span></td>";
+        t += "</tr>";
+      }
+      t += "</table>";
+      return t;
+    };
+
+    auto renderSingleValueTable =
+      [&](const QString& value,
+          const QString& typicalValue,
+          bool showTypical,
+          const QString& headerTitle = QStringLiteral("Value")) -> QString {
+      QString t;
+      t += "<table style='width: 100%; border-collapse: collapse; margin-top: 4px;'>";
+      t += "<tr>";
+      t += "<th style='" + thBase + "'>" + headerTitle + "</th>";
+      t += "</tr>";
+      t += "<tr>";
+      t += "<td style='" + tdBase + "'>" + value + "</td>";
+      t += "</tr>";
+      if (showTypical) {
+        t += "<tr>";
+        t += "<td style='" + tdBase +
+             "'><span style='color: #9a9a9a;'>typical: " + typicalValue +
+             "</span></td>";
+        t += "</tr>";
+      }
+      t += "</table>";
+      return t;
+    };
+
+    auto colorForPercent = [](double value, double warnThreshold) -> QString {
+      if (value < 0.0) return QStringLiteral("#BBBBBB");
+      return value > warnThreshold ? QStringLiteral("#FF8C00")
+                                   : QStringLiteral("#0078d4");
+    };
+
+    auto colorForDisk = [](double value, double warnThreshold) -> QString {
+      if (value < 0.0) return QStringLiteral("#BBBBBB");
+      return value > warnThreshold ? QStringLiteral("#FF8C00")
+                                   : QStringLiteral("#0078d4");
+    };
+
+    auto addPercentMetric = [&](const QString& title,
+                                double userAvgVal,
+                                double userPeakVal,
+                                int decimals,
+                                double warnThreshold,
+                                double typicalAvgVal) {
+      const QString userColor = colorForPercent(userAvgVal, warnThreshold);
+      const QString peakColor = colorForPercent(userPeakVal, warnThreshold);
+
+      const QString userAvg =
+        userValueSpan(formatPercent(userAvgVal, decimals), userColor);
+      const QString userPeak =
+        userValueSpan(formatPercent(userPeakVal, decimals), peakColor);
+
+      const bool showTypical = typicalAvgVal >= 0.0;
+      const QString typicalAvg = formatPercent(typicalAvgVal, decimals);
+      const QString typicalPeak = QStringLiteral("-");
+
+      html += renderMetricBlock(
+        title, renderAvgPeakTable(userAvg, userPeak, typicalAvg, typicalPeak, showTypical));
+    };
+
+    auto addDiskMetric = [&](double userAvgVal, double userPeakVal) {
+      const QString userColor = colorForDisk(userAvgVal, 50.0);
+      const QString peakColor = colorForDisk(userPeakVal, 100.0);
+      const QString userAvg = userValueSpan(formatMBps(userAvgVal), userColor);
+      const QString userPeak = userValueSpan(formatMBps(userPeakVal), peakColor);
+      html += renderMetricBlock(
+        QStringLiteral("Disk I/O"),
+        renderAvgPeakTable(userAvg, userPeak, QString(), QString(), false));
+    };
+
+    const double cpuPeak =
+      bgData.peakSystemCpuUsage > 0 ? bgData.peakSystemCpuUsage : -1.0;
+    const double gpuPeak =
+      bgData.peakSystemGpuUsage > 0 ? bgData.peakSystemGpuUsage : -1.0;
+    const double dpcPeak =
+      bgData.peakSystemDpcTime > 0 ? bgData.peakSystemDpcTime : -1.0;
+    const double intPeak =
+      bgData.peakSystemInterruptTime > 0 ? bgData.peakSystemInterruptTime : -1.0;
+
+    const double diskAvg = (bgData.systemDiskIO >= 0.0)
+                             ? bgData.systemDiskIO
+                             : (diskIO >= 0.0 ? diskIO : -1.0);
+    const double diskPeak =
+      bgData.peakSystemDiskIO > 0 ? bgData.peakSystemDiskIO : -1.0;
+
+    addPercentMetric(QStringLiteral("CPU Usage"), cpuUsage, cpuPeak, 1, 20.0,
+                     general.totalCpuUsage);
+    addPercentMetric(QStringLiteral("GPU Usage"), gpuUsage, gpuPeak, 1, 20.0,
+                     general.totalGpuUsage);
+    addPercentMetric(QStringLiteral("DPC Time"), dpcTime, dpcPeak, 2, 1.0,
+                     general.systemDpcTime);
+    addPercentMetric(QStringLiteral("Interrupt Time"), intTime, intPeak, 2, 0.5,
+                     general.systemInterruptTime);
+    addDiskMetric(diskAvg, diskPeak);
+
+    // Memory metrics (use RAM-binned typicals when available)
+    if (bgData.physicalTotalKB > 0 && bgData.physicalAvailableKB > 0) {
+      const double physicalTotalGB = bgData.physicalTotalKB / (1024.0 * 1024.0);
+      const double physicalAvailableGB =
+        bgData.physicalAvailableKB / (1024.0 * 1024.0);
+      const double physicalUsedGB = physicalTotalGB - physicalAvailableGB;
+      const double physicalUsedPercent =
+        (physicalUsedGB / physicalTotalGB) * 100.0;
+
+      const auto* typicalMem = &general.memoryMetrics;
+      if (!general.memoryMetricsByRam.empty()) {
+        const DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetricsByRamBin* best = nullptr;
+        double bestDiff = 0.0;
+        for (const auto& bin : general.memoryMetricsByRam) {
+          if (bin.sampleCount <= 0 || bin.totalMemoryGB <= 0.0) continue;
+          const double diff = std::abs(bin.totalMemoryGB - physicalTotalGB);
+          if (!best || diff < bestDiff ||
+              (diff == bestDiff && bin.totalMemoryGB < best->totalMemoryGB)) {
+            best = &bin;
+            bestDiff = diff;
+          }
+        }
+        if (best) typicalMem = &best->metrics;
+      }
+
+      const QString ramUserColor = colorForPercent(physicalUsedPercent, 80.0);
+      const QString ramUserText =
+        QString("%1 / %2 (%3)")
+          .arg(formatGB(physicalUsedGB))
+          .arg(formatGB(physicalTotalGB))
+          .arg(formatPercent(physicalUsedPercent, 1));
+
+      const bool showTypicalRam =
+        typicalMem->physicalTotalMB > 0.0 && typicalMem->physicalUsedMB >= 0.0;
+      QString ramTypicalText = QStringLiteral("-");
+      if (showTypicalRam) {
+        const double typicalUsedGB = typicalMem->physicalUsedMB / 1024.0;
+        const double typicalTotalGB = typicalMem->physicalTotalMB / 1024.0;
+        const double typicalPercent =
+          typicalMem->physicalUsedPercent >= 0.0
+            ? typicalMem->physicalUsedPercent
+            : ((typicalTotalGB > 0.0) ? (typicalUsedGB / typicalTotalGB) * 100.0
+                                      : -1.0);
+        ramTypicalText =
+          QString("%1 / %2 (%3)")
+            .arg(formatGB(typicalUsedGB))
+            .arg(formatGB(typicalTotalGB))
+            .arg(formatPercent(typicalPercent, 1));
+      }
+
+      html += renderMetricBlock(
+        QStringLiteral("RAM Usage"),
+        renderSingleValueTable(userValueSpan(ramUserText, ramUserColor),
+                               ramTypicalText, showTypicalRam,
+                               QStringLiteral("Used / Total")));
+
+      if (bgData.commitTotalKB > 0 && bgData.commitLimitKB > 0) {
+        const double commitTotalGB = bgData.commitTotalKB / (1024.0 * 1024.0);
+        const double commitLimitGB = bgData.commitLimitKB / (1024.0 * 1024.0);
+        const double commitPercent = (commitTotalGB / commitLimitGB) * 100.0;
+
+        const QString commitUserColor = colorForPercent(commitPercent, 80.0);
+        const QString commitUserText =
+          QString("%1 / %2 (%3)")
+            .arg(formatGB(commitTotalGB))
+            .arg(formatGB(commitLimitGB))
+            .arg(formatPercent(commitPercent, 1));
+
+        const bool showTypicalCommit =
+          typicalMem->commitLimitMB > 0.0 && typicalMem->commitTotalMB >= 0.0;
+        QString commitTypicalText = QStringLiteral("-");
+        if (showTypicalCommit) {
+          const double typicalCommitTotalGB = typicalMem->commitTotalMB / 1024.0;
+          const double typicalCommitLimitGB = typicalMem->commitLimitMB / 1024.0;
+          const double typicalCommitPercent =
+            typicalMem->commitPercent >= 0.0
+              ? typicalMem->commitPercent
+              : ((typicalCommitLimitGB > 0.0)
+                   ? (typicalCommitTotalGB / typicalCommitLimitGB) * 100.0
+                   : -1.0);
+          commitTypicalText =
+            QString("%1 / %2 (%3)")
+              .arg(formatGB(typicalCommitTotalGB))
+              .arg(formatGB(typicalCommitLimitGB))
+              .arg(formatPercent(typicalCommitPercent, 1));
+        }
+
+        html += renderMetricBlock(
+          QStringLiteral("Committed Memory"),
+          renderSingleValueTable(userValueSpan(commitUserText, commitUserColor),
+                                 commitTypicalText, showTypicalCommit,
+                                 QStringLiteral("Used / Limit")));
+      }
+
+      if (bgData.kernelPagedKB > 0 || bgData.kernelNonPagedKB > 0) {
+        const double kernelTotalMB =
+          (bgData.kernelPagedKB / 1024.0) + (bgData.kernelNonPagedKB / 1024.0);
+        const bool showTypicalKernel = typicalMem->kernelTotalMB >= 0.0;
+        html += renderMetricBlock(
+          QStringLiteral("Kernel / Driver"),
+          renderSingleValueTable(userValueSpan(formatMB(kernelTotalMB), "#0078d4"),
+                                 formatMB(typicalMem->kernelTotalMB),
+                                 showTypicalKernel));
+      }
+
+      if (bgData.systemCacheKB > 0) {
+        const double cacheMB = bgData.systemCacheKB / 1024.0;
+        const bool showTypicalCache = typicalMem->fileCacheMB >= 0.0;
+        html += renderMetricBlock(
+          QStringLiteral("File Cache"),
+          renderSingleValueTable(userValueSpan(formatMB(cacheMB), "#0078d4"),
+                                 formatMB(typicalMem->fileCacheMB),
+                                 showTypicalCache));
+      }
+
+      if (bgData.userModePrivateKB > 0) {
+        const double privMB = bgData.userModePrivateKB / 1024.0;
+        const bool showTypicalPriv = typicalMem->userModePrivateMB >= 0.0;
+        html += renderMetricBlock(
+          QStringLiteral("User-mode Private"),
+          renderSingleValueTable(userValueSpan(formatMB(privMB), "#0078d4"),
+                                 formatMB(typicalMem->userModePrivateMB),
+                                 showTypicalPriv));
+      }
+
+      if (bgData.otherMemoryKB > 0) {
+        const double otherMB = bgData.otherMemoryKB / 1024.0;
+        const bool showTypicalOther = typicalMem->otherMemoryMB >= 0.0;
+        html += renderMetricBlock(
+          QStringLiteral("Other Memory"),
+          renderSingleValueTable(userValueSpan(formatMB(otherMB), "#0078d4"),
+                                 formatMB(typicalMem->otherMemoryMB),
+                                 showTypicalOther));
+      }
+    }
+
+#if 0
     // Determine colors based on usage levels
     QString cpuColor = cpuUsage > 20 ? "#FF8C00" : "#0078d4";
     QString gpuColor = gpuUsage > 20 ? "#FF8C00" : "#0078d4";
@@ -443,6 +733,7 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
     }
 
     // Create a function for table rendering to avoid code duplication
+#endif
     auto renderProcessTable = [](const QMap<QString, ProcessInfo>& procs,
                                  const QString& title,
                                  bool showDpcInfo = false) -> QString {
@@ -597,16 +888,6 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
     // Render all processes
     html += renderProcessTable(
       processes, "Running Applications (Top Resource Users)", true);
-
-    // Add recommendations section
-    if (!recommendations.isEmpty()) {
-      html += "<h3>Performance Recommendations</h3>";
-      html += "<ul style='margin-top: 5px; margin-bottom: 15px;'>";
-      for (const QString& rec : recommendations) {
-        html += QString("<li style='margin-bottom: 5px;'>%1</li>").arg(rec);
-      }
-      html += "</ul>";
-    }
 
     // Final generation of HTML before returning
     LOG_INFO << "BackgroundProcessRenderer: HTML content generation completed "

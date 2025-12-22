@@ -45,6 +45,9 @@ venv/
 *.code-workspace
 devcommands.txt
 
+# Local signing configuration (keep private)
+scripts/signing.local.ps1
+
 
 
 # Misc top-level

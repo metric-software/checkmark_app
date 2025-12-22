@@ -20,7 +20,6 @@
 #include <shellapi.h>
 #include <iostream>
 
-#include "DevToolsChecker.h"
 #include "background_process_monitor.h"
 #include "diagnostic/CoreBoostMetrics.h"     // Include the new header
 #include "diagnostic/DiagnosticDataStore.h"  // Add this include
@@ -95,7 +94,6 @@ class DiagnosticWorker : public QObject {
 
   void setSkipDriveTests(bool skip) { skipDriveTests = skip; }
   void setSkipGpuTests(bool skip) { skipGpuTests = skip; }
-  void setDeveloperMode(bool enabled) { developerMode = enabled; }
   void setRunStorageAnalysis(bool run) { runStorageAnalysis = run; }
   void setSaveResults(bool save) { saveResults = save; }
   void setComparisonMode(bool enabled) { compareMode = enabled; }
@@ -119,8 +117,6 @@ class DiagnosticWorker : public QObject {
   void gpuTestCompleted(const QString& result);
   void driveTestCompleted(const QString& result);
   void diagnosticsFinished();
-  void devToolsResultsReady(const QString& result);
-  void additionalToolsResultsReady(const QString& result);
   void storageAnalysisReady(const StorageAnalysis::AnalysisResults& results);
   void comparisonReady(const QJsonObject& currentResults,
                        const QJsonArray& previousResults);
@@ -132,18 +128,13 @@ class DiagnosticWorker : public QObject {
   void testCompleted(const QString& testName);
 
  private:
-  void addResult(const QString& tool, bool found, const QString& version = "");
-
   bool skipDriveTests = false;
   bool skipGpuTests = false;
-  bool developerMode = false;
   bool runStorageAnalysis = false;
   bool skipCpuThrottlingTests = false;
   bool saveResults = true;  // Always persist diagnostics locally
   bool compareMode = false;
-  QString devToolsResults;
   std::future<void> memoryTestFuture;
-  DevToolsChecker* devToolsChecker;
   QVector<QMap<QString, QString>> memoryModules;
   QString memoryChannelStatus;
   GPUTest* activeGpuTest = nullptr;
@@ -175,7 +166,6 @@ class DiagnosticWorker : public QObject {
   void runMemoryTest();
   void runGPUTest();
   void runDriveTest();
-  void runDeveloperToolsTest();
   void runNetworkTest();
 
   void performStorageAnalysis();

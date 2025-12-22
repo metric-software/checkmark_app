@@ -32,7 +32,6 @@ class DiagnosticView : public QWidget {
  public slots:
   void setRunDriveTests(bool run);
   void setRunGpuTests(bool run);
-  void setDeveloperMode(bool enabled);
   void setRunCpuBoostTests(bool run);
   void setRunNetworkTests(bool run);
   void setRunCpuThrottlingTests(bool run);
@@ -44,10 +43,6 @@ class DiagnosticView : public QWidget {
   void setCpuThrottlingTestMode(int mode);
   void setUseRecommendedSettings(bool useRecommended);
   
-  // New test control slot methods
-  void setRunCpuTests(bool run);
-  void setRunMemoryTests(bool run);  
-  void setRunBackgroundTests(bool run);
   void updateRunButtonState();  // Helper to update button state
 
  private slots:
@@ -59,8 +54,6 @@ class DiagnosticView : public QWidget {
   void updateDriveResults(const QString& result);
   void updateSystemInfo(const QString& result);
   void diagnosticsFinished();
-  void updateDevToolsResults(const QString& result);
-  void updateAdditionalToolsResults(const QString& result);
   void updateStorageResults(const StorageAnalysis::AnalysisResults& results);
   void updateBackgroundProcessResults(const QString& result);
   void updateTestStatus(const QString& testName);
@@ -103,7 +96,6 @@ class DiagnosticView : public QWidget {
   QLabel* memoryPerfLabel;
   QLabel* gpuInfoLabel;
   QLabel* gpuPerfLabel;
-  QLabel* additionalToolsLabel;
   QLabel* systemInfoLabel;
   QVector<QLabel*> driveInfoLabels;
   QVector<QLabel*> drivePerfLabels;
@@ -111,19 +103,8 @@ class DiagnosticView : public QWidget {
   // Updated checkbox declarations (lines 95-105)
   QCheckBox* runGpuTestsCheckbox;
   QCheckBox* runCpuBoostTestsCheckbox;
-  QCheckBox* developerToolsCheckbox;
   QCheckBox* storageAnalysisCheckbox;
   QCheckBox* useRecommendedCheckbox;
-  
-  // New checkboxes for reorganized layout
-  QCheckBox* runCpuTestsCheckbox;  // Master CPU tests checkbox
-  QCheckBox* runMemoryTestsCheckbox;
-  QCheckBox* runBackgroundTestsCheckbox;
-
-  QLabel* devToolsLabel;
-
-  // New boolean members
-  bool developerMode;
 
   // Remove from private members:
   bool runStorageAnalysis = false;
@@ -138,8 +119,6 @@ class DiagnosticView : public QWidget {
   CustomWidgetWithTitle* gpuWidget;
   CustomWidgetWithTitle* sysWidget;
   CustomWidgetWithTitle* driveWidget;
-  CustomWidgetWithTitle* devToolsGroup;
-  CustomWidgetWithTitle* additionalToolsGroup;
   CustomWidgetWithTitle* storageAnalysisGroup;
   CustomWidgetWithTitle* backgroundProcessWidget;
   QLabel* backgroundProcessLabel;

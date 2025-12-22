@@ -6,6 +6,7 @@
 #include <cmath>
 #include "../serialization/ProtobufSerializer.h"
 #include "../../ApplicationSettings.h"
+#include "../../diagnostic/DiagnosticDataStore.h"
 #include "../../logging/Logger.h"
 
 DownloadApiClient::DownloadApiClient(QObject* parent)
@@ -324,6 +325,75 @@ void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
         driveObj.insert(QStringLiteral("model"), label);
         driveObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(drive.value(QStringLiteral("benchmark_results"))));
         makeComponent(QStringLiteral("drive"), driveObj);
+    }
+
+    // Background processes (used for "typical" comparison rows)
+    DiagnosticDataStore::BackgroundProcessGeneralMetrics backgroundMetrics;
+    bool hasBackgroundMetrics = false;
+    if (root.contains(QStringLiteral("background")) && root.value(QStringLiteral("background")).type() == QVariant::Map) {
+        const QVariantMap bg = root.value(QStringLiteral("background")).toMap();
+
+        auto readDouble = [](const QVariantMap& m, const QString& key, double fallback = -1.0) -> double {
+            if (!m.contains(key)) return fallback;
+            bool ok = false;
+            const double v = m.value(key).toDouble(&ok);
+            return ok ? v : fallback;
+        };
+
+        backgroundMetrics.totalCpuUsage = readDouble(bg, QStringLiteral("total_cpu_usage"));
+        backgroundMetrics.totalGpuUsage = readDouble(bg, QStringLiteral("total_gpu_usage"));
+        backgroundMetrics.systemDpcTime = readDouble(bg, QStringLiteral("system_dpc_time"));
+        backgroundMetrics.systemInterruptTime = readDouble(bg, QStringLiteral("system_interrupt_time"));
+
+        auto parseMemoryMetrics = [&](const QVariant& v) -> DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetrics {
+            DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetrics out;
+            if (v.type() != QVariant::Map) return out;
+            const QVariantMap mm = v.toMap();
+            out.commitLimitMB = readDouble(mm, QStringLiteral("commit_limit_mb"));
+            out.commitPercent = readDouble(mm, QStringLiteral("commit_percent"));
+            out.commitTotalMB = readDouble(mm, QStringLiteral("commit_total_mb"));
+            out.fileCacheMB = readDouble(mm, QStringLiteral("file_cache_mb"));
+            out.kernelNonPagedMB = readDouble(mm, QStringLiteral("kernel_nonpaged_mb"));
+            out.kernelPagedMB = readDouble(mm, QStringLiteral("kernel_paged_mb"));
+            out.kernelTotalMB = readDouble(mm, QStringLiteral("kernel_total_mb"));
+            out.otherMemoryMB = readDouble(mm, QStringLiteral("other_memory_mb"));
+            out.physicalAvailableMB = readDouble(mm, QStringLiteral("physical_available_mb"));
+            out.physicalTotalMB = readDouble(mm, QStringLiteral("physical_total_mb"));
+            out.physicalUsedMB = readDouble(mm, QStringLiteral("physical_used_mb"));
+            out.physicalUsedPercent = readDouble(mm, QStringLiteral("physical_used_percent"));
+            out.userModePrivateMB = readDouble(mm, QStringLiteral("user_mode_private_mb"));
+            return out;
+        };
+
+        backgroundMetrics.memoryMetrics = parseMemoryMetrics(bg.value(QStringLiteral("memory_metrics")));
+
+        const QVariant byRam = bg.value(QStringLiteral("memory_metrics_by_ram"));
+        if (byRam.type() == QVariant::List) {
+            const QVariantList bins = byRam.toList();
+            backgroundMetrics.memoryMetricsByRam.reserve(static_cast<size_t>(bins.size()));
+            for (const QVariant& item : bins) {
+                if (item.type() != QVariant::Map) continue;
+                const QVariantMap binMap = item.toMap();
+
+                DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetricsByRamBin bin;
+                bin.totalMemoryGB = readDouble(binMap, QStringLiteral("total_memory_gb"));
+                bin.sampleCount = binMap.value(QStringLiteral("sample_count")).toInt();
+                bin.metrics = parseMemoryMetrics(binMap.value(QStringLiteral("metrics")));
+
+                backgroundMetrics.memoryMetricsByRam.push_back(std::move(bin));
+            }
+        }
+
+        hasBackgroundMetrics = (backgroundMetrics.totalCpuUsage >= 0.0 ||
+                                backgroundMetrics.totalGpuUsage >= 0.0 ||
+                                backgroundMetrics.systemDpcTime >= 0.0 ||
+                                backgroundMetrics.systemInterruptTime >= 0.0 ||
+                                backgroundMetrics.memoryMetrics.physicalTotalMB >= 0.0 ||
+                                !backgroundMetrics.memoryMetricsByRam.empty());
+    }
+
+    if (hasBackgroundMetrics) {
+        DiagnosticDataStore::getInstance().setGeneralBackgroundProcessMetrics(backgroundMetrics);
     }
 }
 

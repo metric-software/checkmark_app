@@ -575,23 +575,13 @@ QWidget* MemoryResultRenderer::processMemoryData(
   rwLayout->addWidget(readBar);
   rwLayout->addWidget(writeBar);
 
-  // Add recommendations and information
-  QLabel* infoLabel = new QLabel(
-    getMemoryPerformanceRecommendation(bandwidth, latencyNs, xmpEnabled));
-  infoLabel->setWordWrap(true);
-  infoLabel->setStyleSheet(
-    "color: #dddddd; font-style: italic; margin-top: 8px;");
-  performanceLayout->addWidget(infoLabel);
+  // Intentionally omit analysis/recommendation text in the Memory results view.
 
   // Add performance sections to the layout
   memMetricsLayout->addWidget(performanceBox, 2, 0, 1, 2);
   memMetricsLayout->addWidget(rwBox, 3, 0, 1, 2);
 
-  // Add memory modules table if available
-  if (!memData.modules.empty()) {
-    QWidget* moduleSection = createMemoryModulesTable(memData.modules);
-    memMetricsLayout->addWidget(moduleSection, 4, 0, 1, 2);
-  }
+  // Intentionally omit memory module details table in the Memory results view.
 
   // Add memory stability test results if available
   if (memData.stabilityTest.testPerformed) {

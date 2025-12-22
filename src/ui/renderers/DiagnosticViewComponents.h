@@ -47,6 +47,16 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
                                         double comparisonValue, double maxValue,
                                         const QString& unit,
                                         bool lowerIsBetter = true);
+QWidget* createComparisonPerformanceBar(const QString& label, double value,
+                                        double comparisonValue, double maxValue,
+                                        const QString& unit,
+                                        const char* description,
+                                        bool lowerIsBetter = true);
+QWidget* createComparisonPerformanceBar(const QString& label, double value,
+                                        double comparisonValue, double maxValue,
+                                        const QString& unit,
+                                        const QString& description,
+                                        bool lowerIsBetter = true);
 
 // New enum for aggregation type
 enum class AggregationType {
