@@ -329,12 +329,14 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
 
   // Create bar container for user's result - wider and expandable
   QWidget* userBarContainer = new QWidget();
+  userBarContainer->setObjectName("userBarContainer");
   userBarContainer->setFixedHeight(20);
   userBarContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   userBarContainer->setStyleSheet(
     "background-color: #333333; border-radius: 2px;");
 
   QHBoxLayout* userBarLayout = new QHBoxLayout(userBarContainer);
+  userBarLayout->setObjectName("user_bar_layout");
   userBarLayout->setContentsMargins(0, 0, 0, 0);
   userBarLayout->setSpacing(0);
 
@@ -348,6 +350,7 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   QString userBarColor = "#0078d4";  // Blue for user's result
 
   QWidget* userBar = new QWidget();
+  userBar->setObjectName("user_bar_fill");
   userBar->setFixedHeight(20);
   userBar->setStyleSheet(
     QString("background-color: %1; border-radius: 2px;").arg(userBarColor));
@@ -393,6 +396,7 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   }
 
   QWidget* userSpacer = new QWidget();
+  userSpacer->setObjectName("user_bar_spacer");
   userSpacer->setStyleSheet("background-color: transparent;");
 
   userBarLayout->addWidget(userBar, userPercentage);
@@ -404,8 +408,10 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
     userBarLayout->setContentsMargins(0, 0, 0, 0);
 
     // Create an overlay layout
-    QHBoxLayout* overlayLayout = new QHBoxLayout(userBarContainer);
+    QHBoxLayout* overlayLayout = new QHBoxLayout(userBar);
+    overlayLayout->setObjectName("overlayLayout");
     overlayLayout->setContentsMargins(0, 0, 0, 0);
+    percentageLabel->setObjectName("percentageLabel");
     overlayLayout->addWidget(percentageLabel);
   }
 

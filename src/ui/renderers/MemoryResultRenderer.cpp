@@ -1122,26 +1122,254 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
   // Generate aggregated data from individual results
   auto aggregatedData = generateAggregatedMemoryData(comparisonData);
 
+  const QPair<double, double> bandwidthValsCopy = bandwidthVals;
+  const QPair<double, double> latencyValsCopy = latencyVals;
+  const QPair<double, double> readTimeValsCopy = readTimeVals;
+  const QPair<double, double> writeTimeValsCopy = writeTimeVals;
+
+  struct TestMetric {
+    QString objectName;
+    double userValue;
+    double compValue;
+    QString unit;
+    bool lowerIsBetter;
+  };
+
+  auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
+    QWidget* userBarContainer =
+      parentContainer->findChild<QWidget*>("userBarContainer");
+    if (!userBarContainer) {
+      return;
+    }
+
+    QHBoxLayout* userBarLayout =
+      userBarContainer->findChild<QHBoxLayout*>("user_bar_layout");
+    if (!userBarLayout) {
+      return;
+    }
+
+    QWidget* userBar = userBarContainer->findChild<QWidget*>("user_bar_fill");
+    QWidget* userSpacer =
+      userBarContainer->findChild<QWidget*>("user_bar_spacer");
+    if (!userBar || !userSpacer) {
+      return;
+    }
+
+    const int barIndex = userBarLayout->indexOf(userBar);
+    const int spacerIndex = userBarLayout->indexOf(userSpacer);
+    if (barIndex >= 0) {
+      userBarLayout->setStretch(barIndex, percentage);
+    }
+    if (spacerIndex >= 0) {
+      userBarLayout->setStretch(spacerIndex, 100 - percentage);
+    }
+  };
+
+  auto makeDisplayName = [](const QString& componentName,
+                            DiagnosticViewComponents::AggregationType type,
+                            bool hasSelection) {
+    if (!hasSelection) {
+      return QString("Select memory kit to compare");
+    }
+
+    return (componentName == DownloadApiClient::generalAverageLabel())
+             ? componentName
+             : componentName + " (" +
+                 (type == DiagnosticViewComponents::AggregationType::Best
+                    ? "Best)"
+                    : "Avg)");
+  };
+
+  auto updateMemoryBars =
+    [containerWidget, bandwidthValsCopy, latencyValsCopy, readTimeValsCopy,
+     writeTimeValsCopy, updateUserBarLayout](
+      const MemoryComparisonData* compData, const QString& displayName,
+      bool hasSelection) {
+      std::vector<TestMetric> tests = {
+        {"comparison_bar_bandwidth", bandwidthValsCopy.first,
+         compData ? (compData->bandwidthMBs / 1024.0) : 0.0, "GB/s", false},
+        {"comparison_bar_latency", latencyValsCopy.first,
+         compData ? compData->latencyNs : 0.0, "ns", true},
+        {"comparison_bar_read", readTimeValsCopy.first,
+         compData ? compData->readTimeGBs : 0.0, "GB/s", false},
+        {"comparison_bar_write", writeTimeValsCopy.first,
+         compData ? compData->writeTimeGBs : 0.0, "GB/s", false}};
+
+      QHash<QString, TestMetric> testMap;
+      for (const auto& test : tests) {
+        testMap.insert(test.objectName, test);
+      }
+
+      QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
+        QRegularExpression("^comparison_bar_"));
+
+      for (QWidget* bar : allBars) {
+        auto it = testMap.find(bar->objectName());
+        if (it == testMap.end()) {
+          continue;
+        }
+
+        const TestMetric test = it.value();
+        const double maxValue =
+          std::max(test.userValue, test.compValue);
+        const double scaledMax = maxValue > 0 ? maxValue * 1.25 : 0.0;
+        const int userPercentage =
+          (test.userValue > 0 && scaledMax > 0)
+            ? static_cast<int>(
+                std::min(100.0, (test.userValue / scaledMax) * 100.0))
+            : 0;
+
+        QWidget* parentContainer = bar->parentWidget();
+        if (!parentContainer) {
+          continue;
+        }
+
+        QLabel* nameLabel =
+          parentContainer->findChild<QLabel*>("comp_name_label");
+        if (nameLabel) {
+          nameLabel->setText(displayName);
+          nameLabel->setStyleSheet(
+            hasSelection
+              ? "color: #ffffff; background: transparent;"
+              : "color: #888888; font-style: italic; background: transparent;");
+        }
+
+        updateUserBarLayout(parentContainer, userPercentage);
+
+        QLabel* valueLabel = parentContainer->findChild<QLabel*>("value_label");
+        QLayout* layout = bar->layout();
+        if (layout) {
+          QLayoutItem* child;
+          while ((child = layout->takeAt(0)) != nullptr) {
+            delete child->widget();
+            delete child;
+          }
+
+          if (!hasSelection || test.compValue <= 0) {
+            QWidget* emptyBar = new QWidget();
+            emptyBar->setStyleSheet("background-color: transparent;");
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(emptyBar);
+            }
+          } else {
+            const int compPercentage =
+              (scaledMax > 0)
+                ? static_cast<int>(std::min(
+                    100.0, (test.compValue / scaledMax) * 100.0))
+                : 0;
+
+            QWidget* barWidget = new QWidget();
+            barWidget->setFixedHeight(16);
+            barWidget->setStyleSheet(
+              "background-color: #FF4444; border-radius: 2px;");
+
+            QWidget* spacer = new QWidget();
+            spacer->setStyleSheet("background-color: transparent;");
+
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(barWidget, compPercentage);
+              newLayout->addWidget(spacer, 100 - compPercentage);
+            }
+          }
+        }
+
+        if (valueLabel) {
+          if (!hasSelection || test.compValue <= 0) {
+            valueLabel->setText("-");
+            valueLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          } else {
+            valueLabel->setText(
+              QString("%1 %2").arg(test.compValue, 0, 'f', 1).arg(test.unit));
+            valueLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+        }
+
+        QWidget* userBarContainer =
+          parentContainer->findChild<QWidget*>("userBarContainer");
+        QWidget* userBarFill = userBarContainer
+                                 ? userBarContainer->findChild<QWidget*>(
+                                     "user_bar_fill")
+                                 : nullptr;
+        if (!userBarFill) {
+          continue;
+        }
+
+        QLabel* existingLabel =
+          userBarFill->findChild<QLabel*>("percentageLabel");
+        if (existingLabel) {
+          delete existingLabel;
+        }
+
+        if (hasSelection && test.compValue > 0 && test.userValue > 0) {
+          double percentChange = 0;
+          if (test.lowerIsBetter) {
+            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+          } else {
+            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+          }
+
+          QString percentText;
+          QString percentColor;
+
+          const bool isBetter =
+            (test.lowerIsBetter && percentChange < 0) ||
+            (!test.lowerIsBetter && percentChange > 0);
+          const bool isApproxEqual = qAbs(percentChange) < 1.0;
+
+          if (isApproxEqual) {
+            percentText = "≈";
+            percentColor = "#FFAA00";
+          } else {
+            percentText =
+              QString("%1%2%")
+                .arg(isBetter ? "+" : "")
+                .arg(percentChange, 0, 'f', 1);
+            percentColor = isBetter ? "#44FF44" : "#FF4444";
+          }
+
+          QHBoxLayout* overlayLayout =
+            userBarFill->findChild<QHBoxLayout*>("overlayLayout");
+          if (!overlayLayout) {
+            overlayLayout = new QHBoxLayout(userBarFill);
+            overlayLayout->setObjectName("overlayLayout");
+            overlayLayout->setContentsMargins(0, 0, 0, 0);
+          }
+
+          QLabel* percentageLabel = new QLabel(percentText);
+          percentageLabel->setObjectName("percentageLabel");
+          percentageLabel->setStyleSheet(
+            QString(
+              "color: %1; background: transparent; font-weight: bold;")
+              .arg(percentColor));
+          percentageLabel->setAlignment(Qt::AlignCenter);
+          overlayLayout->addWidget(percentageLabel);
+        }
+      }
+    };
+
   // Create a callback function to handle selection changes
-  auto selectionCallback = [containerWidget, bandwidthVals, latencyVals,
-                            readTimeVals, writeTimeVals, downloadClient](
+  auto selectionCallback = [downloadClient, makeDisplayName, updateMemoryBars](
                              const QString& componentName,
                              const QString& originalFullName,
                              DiagnosticViewComponents::AggregationType type,
                              const MemoryComparisonData& memData) {
-  LOG_INFO << "MemoryResultRenderer: selectionCallback invoked: component='"
-       << componentName.toStdString() << "', originalFullName='"
-       << originalFullName.toStdString() << "', aggType='"
-       << (type == DiagnosticViewComponents::AggregationType::Best ? "Best" : "Avg")
-       << "', havePerfData=" << (memData.bandwidthMBs > 0);
+    LOG_INFO << "MemoryResultRenderer: selectionCallback invoked: component='"
+         << componentName.toStdString() << "', originalFullName='"
+         << originalFullName.toStdString() << "', aggType='"
+         << (type == DiagnosticViewComponents::AggregationType::Best ? "Best" : "Avg")
+         << "', havePerfData=" << (memData.bandwidthMBs > 0);
     
     // If downloadClient is available and memData has no performance data (only name), 
     // fetch the actual data from the server
-  if (downloadClient && !componentName.isEmpty() && memData.bandwidthMBs <= 0) {
+    if (downloadClient && !componentName.isEmpty() && memData.bandwidthMBs <= 0) {
       LOG_INFO << "MemoryResultRenderer: Fetching network data for Memory: " << componentName.toStdString() << " using original name: " << originalFullName.toStdString();
       
       downloadClient->fetchComponentData("memory", originalFullName, 
-        [containerWidget, bandwidthVals, latencyVals, readTimeVals, writeTimeVals, componentName, type]
+        [componentName, type, makeDisplayName, updateMemoryBars]
         (bool success, const ComponentData& networkData, const QString& error) {
           
           if (success) {
@@ -1150,99 +1378,9 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
             // Convert network data to MemoryComparisonData
             MemoryComparisonData fetchedMemData = convertNetworkDataToMemory(networkData);
             
-            // Find all comparison bars
-            QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-              QRegularExpression("^comparison_bar_"));
-            
-            // Create display name
-            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-              ? componentName
-              : componentName + " (" +
-                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-            
-            LOG_INFO << "MemoryResultRenderer: Updating comparison bars with fetched data";
-            
-            // Build test data with the fetched values
-            struct TestData {
-              QString objectName;
-              double value;
-              QString unit;
-            };
-            
-            std::vector<TestData> tests = {
-              {"comparison_bar_bandwidth", fetchedMemData.bandwidthMBs / 1000.0, "GB/s"},
-              {"comparison_bar_latency", fetchedMemData.latencyNs, "ns"},
-              {"comparison_bar_read", fetchedMemData.readTimeGBs, "GB/s"},
-              {"comparison_bar_write", fetchedMemData.writeTimeGBs, "GB/s"}
-            };
-            
-            // Update each comparison bar with fetched data
-            for (QWidget* bar : allBars) {
-              QWidget* parentContainer = bar->parentWidget();
-              if (parentContainer) {
-                QLabel* nameLabel = parentContainer->findChild<QLabel*>("comp_name_label");
-                if (nameLabel) {
-                  nameLabel->setText(displayName);
-                  nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-                }
-                
-                // Update the value label and bar based on bar type
-                for (const auto& test : tests) {
-                  if (bar->objectName() == test.objectName && test.value > 0) {
-                    LOG_INFO << "MemoryResultRenderer: Updating bar " << test.objectName.toStdString() 
-                             << " with value " << test.value;
-                    
-                    QLabel* valueLabel = bar->parentWidget()->findChild<QLabel*>("value_label");
-                    if (valueLabel) {
-                      valueLabel->setText(QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-                      valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
-                    }
-                    
-                    // Also update the bar visual (simplified approach) 
-                    QLayout* layout = bar->layout();
-                    if (layout) {
-                      // Remove existing items
-                      QLayoutItem* child;
-                      while ((child = layout->takeAt(0)) != nullptr) {
-                        delete child->widget();
-                        delete child;
-                      }
-                      
-                      // Calculate percentage based on appropriate max value
-                      double maxValue = 1.0;
-                      if (test.objectName == "comparison_bar_bandwidth") {
-                        maxValue = bandwidthVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_latency") {
-                        maxValue = latencyVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_read") {
-                        maxValue = readTimeVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_write") {
-                        maxValue = writeTimeVals.second * 1.25;
-                      }
-                      
-                      int percentage = test.value <= 0 ? 0 : 
-                        static_cast<int>(std::min(100.0, (test.value / maxValue) * 100.0));
-                      
-                      // Create a comparison bar
-                      QWidget* barWidget = new QWidget();
-                      barWidget->setFixedHeight(16);
-                      barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
-                      
-                      QWidget* spacer = new QWidget();
-                      spacer->setStyleSheet("background-color: transparent;");
-                      
-                      QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-                      if (newLayout) {
-                        newLayout->addWidget(barWidget, percentage);
-                        newLayout->addWidget(spacer, 100 - percentage);
-                      }
-                    }
-                    break;
-                  }
-                }
-              }
-            }
-            
+            const QString displayName = makeDisplayName(
+              componentName, type, true);
+            updateMemoryBars(&fetchedMemData, displayName, true);
           } else {
             LOG_ERROR << "MemoryResultRenderer: Failed to fetch Memory data for " << componentName.toStdString() 
                       << ": " << error.toStdString();
@@ -1252,220 +1390,12 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
       
       return; // Exit early - the network callback will handle the UI update
     }
-    // Find all comparison bars
-    QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-      QRegularExpression("^comparison_bar_"));
 
-    if (componentName.isEmpty()) {
-      LOG_WARN << "MemoryResultRenderer: Empty component selection; resetting bars.";
-      // Reset all bars if user selects the placeholder option
-      for (QWidget* bar : allBars) {
-        QLabel* valueLabel = bar->findChild<QLabel*>("value_label");
-        QLabel* nameLabel =
-          bar->parentWidget()->findChild<QLabel*>("comp_name_label");
+    const bool hasSelection = !componentName.isEmpty();
+    const QString displayName = makeDisplayName(componentName, type, hasSelection);
 
-        if (valueLabel) {
-          valueLabel->setText("-");
-          valueLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        if (nameLabel) {
-          nameLabel->setText("Select memory kit to compare");
-          nameLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        QLayout* layout = bar->layout();
-        if (layout) {
-          // Clear existing layout
-          QLayoutItem* child;
-          while ((child = layout->takeAt(0)) != nullptr) {
-            delete child->widget();
-            delete child;
-          }
-
-          // Add empty placeholder
-          QWidget* emptyBar = new QWidget();
-          emptyBar->setStyleSheet("background-color: transparent;");
-
-          QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-          if (newLayout) {
-            newLayout->addWidget(emptyBar);
-          }
-        }
-      }
-      return;
-    }
-
-    // Structure to hold test data for updating bars
-    struct TestData {
-      QString objectName;
-      double value;
-      double maxValue;
-      QString unit;
-      bool lowerIsBetter;
-    };
-
-    // Create display name with aggregation type
-    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-      ? componentName
-      : componentName + " (" +
-          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-
-    std::vector<TestData> tests = {
-      {"comparison_bar_bandwidth", memData.bandwidthMBs / 1024.0,
-       bandwidthVals.second, "GB/s", false},
-      {"comparison_bar_latency", memData.latencyNs, latencyVals.second, "ns",
-       true},
-      {"comparison_bar_read", memData.readTimeGBs, readTimeVals.second, "GB/s",
-       false},
-      {"comparison_bar_write", memData.writeTimeGBs, writeTimeVals.second,
-       "GB/s", false}};
-
-    // Update all comparison bars
-    for (QWidget* bar : allBars) {
-      QWidget* parentContainer = bar->parentWidget();
-      if (parentContainer) {
-        QLabel* nameLabel =
-          parentContainer->findChild<QLabel*>("comp_name_label");
-        if (nameLabel) {
-          nameLabel->setText(displayName);
-          nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-        }
-
-        for (const auto& test : tests) {
-          if (bar->objectName() == test.objectName) {
-            // Find the value label and update it
-            QLabel* valueLabel =
-              bar->parentWidget()->findChild<QLabel*>("value_label");
-            if (valueLabel) {
-              valueLabel->setText(
-                QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-              valueLabel->setStyleSheet(
-                "color: #FF4444; background: transparent;");
-            }
-
-            // Update the bar width with scaled value
-            QLayout* layout = bar->layout();
-            if (layout) {
-              // Remove existing items
-              QLayoutItem* child;
-              while ((child = layout->takeAt(0)) != nullptr) {
-                delete child->widget();
-                delete child;
-              }
-
-              // Calculate scaled percentage (0-100%)
-              double scaledMaxValue =
-                test.maxValue *
-                1.25;  // Use same scaling as in createComparisonPerformanceBar
-              int percentage =
-                test.value <= 0
-                  ? 0
-                  : static_cast<int>(
-                      std::min(100.0, (test.value / scaledMaxValue) * 100.0));
-
-              // Create bar and spacer
-              QWidget* barWidget = new QWidget();
-              barWidget->setFixedHeight(16);
-              barWidget->setStyleSheet(
-                "background-color: #FF4444; border-radius: 2px;");
-
-              QWidget* spacer = new QWidget();
-              spacer->setStyleSheet("background-color: transparent;");
-
-              QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-              if (newLayout) {
-                newLayout->addWidget(barWidget, percentage);
-                newLayout->addWidget(spacer, 100 - percentage);
-              }
-            }
-
-            // Also update percentage difference with user's result
-            QWidget* userBar =
-              parentContainer->findChild<QWidget*>("userBarContainer");
-            if (userBar) {
-              // Find if there's an existing percentage label to remove
-              QLabel* existingLabel =
-                userBar->findChild<QLabel*>("percentageLabel");
-              if (existingLabel) {
-                delete existingLabel;
-              }
-
-              // Get the matching user value to calculate percentage
-              double userValue = 0;
-              if (test.objectName == "comparison_bar_bandwidth")
-                userValue = bandwidthVals.first;
-              else if (test.objectName == "comparison_bar_latency")
-                userValue = latencyVals.first;
-              else if (test.objectName == "comparison_bar_read")
-                userValue = readTimeVals.first;
-              else if (test.objectName == "comparison_bar_write")
-                userValue = writeTimeVals.first;
-
-              // Only add percentage if we have valid values
-              if (userValue > 0 && test.value > 0) {
-                // Calculate percentage difference
-                double percentChange = 0;
-                if (test.lowerIsBetter) {
-                  // For lower-is-better metrics, negative percent means user is
-                  // better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                } else {
-                  // For higher-is-better metrics, positive percent means user
-                  // is better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                }
-
-                QString percentText;
-                QString percentColor;
-
-                // Determine if user result is better or worse
-                bool isBetter = (test.lowerIsBetter && percentChange < 0) ||
-                                (!test.lowerIsBetter && percentChange > 0);
-                bool isApproxEqual = qAbs(percentChange) < 1.0;
-
-                if (isApproxEqual) {
-                  percentText = "≈";
-                  percentColor = "#FFAA00";  // Yellow for equal
-                } else {
-                  percentText =
-                    QString("%1%2%")
-                      .arg(isBetter ? "+"
-                                    : "")  // Add + prefix for better results
-                      .arg(percentChange, 0, 'f', 1);
-                  percentColor =
-                    isBetter ? "#44FF44"
-                             : "#FF4444";  // Green for better, red for worse
-                }
-
-                // Create an overlay layout if it doesn't exist
-                QHBoxLayout* overlayLayout =
-                  userBar->findChild<QHBoxLayout*>("overlayLayout");
-                if (!overlayLayout) {
-                  overlayLayout = new QHBoxLayout(userBar);
-                  overlayLayout->setObjectName("overlayLayout");
-                  overlayLayout->setContentsMargins(0, 0, 0, 0);
-                }
-
-                // Create and add percentage label
-                QLabel* percentageLabel = new QLabel(percentText);
-                percentageLabel->setObjectName("percentageLabel");
-                percentageLabel->setStyleSheet(
-                  QString(
-                    "color: %1; background: transparent; font-weight: bold;")
-                    .arg(percentColor));
-                percentageLabel->setAlignment(Qt::AlignCenter);
-                overlayLayout->addWidget(percentageLabel);
-              }
-            }
-
-            break;
-          }
-        }
-      }
-    }
+    updateMemoryBars(hasSelection ? &memData : nullptr, displayName,
+                     hasSelection);
   };
 
   // Use the shared helper to create the dropdown

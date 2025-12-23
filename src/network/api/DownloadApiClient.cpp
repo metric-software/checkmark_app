@@ -279,6 +279,54 @@ void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
         cpuObj.insert(QStringLiteral("threads"), static_cast<int>(std::round(cpu.value(QStringLiteral("threads_avg")).toDouble())));
         cpuObj.insert(QStringLiteral("benchmark_results"), toJsonObjectOrEmpty(cpu.value(QStringLiteral("benchmark_results"))));
 
+        const QVariant coldStartVariant = cpu.value(QStringLiteral("cold_start"));
+        if (coldStartVariant.type() == QVariant::Map) {
+            const QVariantMap coldStartMap = coldStartVariant.toMap();
+            QJsonObject coldStartObj;
+            if (coldStartMap.contains(QStringLiteral("avg"))) {
+                coldStartObj.insert(QStringLiteral("avg_response_time_us"), coldStartMap.value(QStringLiteral("avg")).toDouble());
+            }
+            if (coldStartMap.contains(QStringLiteral("min"))) {
+                coldStartObj.insert(QStringLiteral("min_response_time_us"), coldStartMap.value(QStringLiteral("min")).toDouble());
+            }
+            if (coldStartMap.contains(QStringLiteral("max"))) {
+                coldStartObj.insert(QStringLiteral("max_response_time_us"), coldStartMap.value(QStringLiteral("max")).toDouble());
+            }
+            if (coldStartMap.contains(QStringLiteral("std"))) {
+                coldStartObj.insert(QStringLiteral("std_dev_us"), coldStartMap.value(QStringLiteral("std")).toDouble());
+            }
+            if (coldStartMap.contains(QStringLiteral("jitter_us"))) {
+                coldStartObj.insert(QStringLiteral("jitter_us"), coldStartMap.value(QStringLiteral("jitter_us")).toDouble());
+            }
+            if (!coldStartObj.isEmpty()) {
+                cpuObj.insert(QStringLiteral("cold_start"), coldStartObj);
+            }
+        }
+
+        const QVariant boostVariant = cpu.value(QStringLiteral("boost_summary"));
+        if (boostVariant.type() == QVariant::Map) {
+            const QVariantMap boostMap = boostVariant.toMap();
+            QJsonObject boostObj;
+            if (boostMap.contains(QStringLiteral("all_core_power_w"))) {
+                boostObj.insert(QStringLiteral("all_core_power_w"), boostMap.value(QStringLiteral("all_core_power_w")).toDouble());
+            }
+            if (boostMap.contains(QStringLiteral("idle_power_w"))) {
+                boostObj.insert(QStringLiteral("idle_power_w"), boostMap.value(QStringLiteral("idle_power_w")).toDouble());
+            }
+            if (boostMap.contains(QStringLiteral("single_core_power_w"))) {
+                boostObj.insert(QStringLiteral("single_core_power_w"), boostMap.value(QStringLiteral("single_core_power_w")).toDouble());
+            }
+            if (boostMap.contains(QStringLiteral("best_boosting_core"))) {
+                boostObj.insert(QStringLiteral("best_boosting_core"), boostMap.value(QStringLiteral("best_boosting_core")).toInt());
+            }
+            if (boostMap.contains(QStringLiteral("max_boost_delta_mhz"))) {
+                boostObj.insert(QStringLiteral("max_boost_delta_mhz"), boostMap.value(QStringLiteral("max_boost_delta_mhz")).toDouble());
+            }
+            if (!boostObj.isEmpty()) {
+                cpuObj.insert(QStringLiteral("boost_summary"), boostObj);
+            }
+        }
+
         // cache_latencies: server uses latency_ns; renderers expect latency (ns)
         QJsonArray cacheLatencies;
         const QVariant v = cpu.value(QStringLiteral("cache_latencies"));

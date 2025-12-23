@@ -1062,11 +1062,21 @@ bool SystemWrapper::isGameModeEnabled() {
   HKEY hKey;
   DWORD gameModeValue = 0;
   DWORD dataSize = sizeof(DWORD);
+  bool valueRead = false;
 
   if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\GameBar", 0,
                     KEY_READ, &hKey) == ERROR_SUCCESS) {
-    if (RegQueryValueExW(hKey, L"AutoGameMode", 0, NULL, (LPBYTE)&gameModeValue,
+    if (RegQueryValueExW(hKey, L"AutoGameModeEnabled", 0, NULL,
+                         (LPBYTE)&gameModeValue,
                          &dataSize) == ERROR_SUCCESS) {
+      valueRead = true;
+    } else if (RegQueryValueExW(hKey, L"AutoGameMode", 0, NULL,
+                                (LPBYTE)&gameModeValue,
+                                &dataSize) == ERROR_SUCCESS) {
+      valueRead = true;
+    }
+
+    if (valueRead) {
       gameMode = (gameModeValue == 1);
       LOG_INFO << "  Game mode is " << (gameMode ? "enabled" : "disabled")
                ;
@@ -1086,6 +1096,7 @@ bool SystemWrapper::isGameModeEnabled() {
 SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
   PageFileInfo info;
   LOG_DEBUG << "SystemWrapper: Getting page file info...";
+  bool systemManagedKnown = false;
 
   try {
     // First check if page file exists based on memory status
@@ -1103,7 +1114,8 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
 
     // Check for AutomaticManagedPagefile in Win32_ComputerSystem
     HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (SUCCEEDED(hr)) {
+    bool comInitialized = SUCCEEDED(hr);
+    if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
       IWbemLocator* pLoc = nullptr;
       hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                             IID_IWbemLocator, (LPVOID*)&pLoc);
@@ -1141,6 +1153,7 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
                                            &vtProp, 0, 0))) {
                   if (vtProp.vt == VT_BOOL) {
                     info.systemManaged = (vtProp.boolVal == VARIANT_TRUE);
+                    systemManagedKnown = true;
                     LOG_DEBUG
                       << "  Page file is "
                       << (info.systemManaged ? "system-managed (from WMI)"
@@ -1163,12 +1176,15 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
         pLoc->Release();
       }
 
-      CoUninitialize();
+      if (comInitialized) {
+        CoUninitialize();
+      }
     }
 
     // Use WMI to get detailed page file information (keep existing code)
     hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (SUCCEEDED(hr)) {
+    comInitialized = SUCCEEDED(hr);
+    if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
       IWbemLocator* pLoc = nullptr;
       hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                             IID_IWbemLocator, (LPVOID*)&pLoc);
@@ -1197,6 +1213,7 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
 
               while (pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn) ==
                      S_OK) {
+                info.exists = true;
                 VARIANT vtProp;
 
                 // Get the page file name
@@ -1212,16 +1229,22 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
                     char* colonPtr = strchr(name, ':');
                     if (colonPtr != nullptr) {
                       size_t colonPos = colonPtr - name;
-                      std::string driveLetter =
-                        std::string(1, name[colonPos - 1]) + ":";
-                      info.locations.push_back(driveLetter);
+                      if (colonPos > 0) {
+                        std::string driveLetter =
+                          std::string(1, name[colonPos - 1]) + ":";
+                        info.locations.push_back(driveLetter);
 
-                      // Store primary drive letter if it's the first one
-                      if (info.primaryDriveLetter.empty()) {
-                        info.primaryDriveLetter = driveLetter;
+                        // Store primary drive letter if it's the first one
+                        if (info.primaryDriveLetter.empty()) {
+                          info.primaryDriveLetter = driveLetter;
+                        }
+                        LOG_DEBUG << "  Page file location: [drive letter hidden for privacy]"
+                                 ;
+                      } else {
+                        info.locations.push_back(name);
+                        LOG_DEBUG << "  Page file location: [path hidden for privacy]"
+                                 ;
                       }
-                      LOG_DEBUG << "  Page file location: [drive letter hidden for privacy]"
-                               ;
                     } else {
                       info.locations.push_back(name);
                       LOG_DEBUG << "  Page file location: [path hidden for privacy]"
@@ -1260,44 +1283,49 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
               pEnumerator->Release();
             }
 
-            // Only check for manual page file settings if we don't already know
-            // it's system-managed
-            if (!info.systemManaged) {
-              // Query for page file settings
-              pEnumerator = nullptr;
-              hr = pSvc->ExecQuery(
-                bstr_t("WQL"), bstr_t("SELECT * FROM Win32_PageFileSetting"),
-                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL,
-                &pEnumerator);
+            // Query for page file settings
+            pEnumerator = nullptr;
+            hr = pSvc->ExecQuery(
+              bstr_t("WQL"), bstr_t("SELECT * FROM Win32_PageFileSetting"),
+              WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL,
+              &pEnumerator);
 
-              if (SUCCEEDED(hr) && pEnumerator) {
-                IWbemClassObject* pclsObj = nullptr;
-                ULONG uReturn = 0;
+            if (SUCCEEDED(hr) && pEnumerator) {
+              IWbemClassObject* pclsObj = nullptr;
+              ULONG uReturn = 0;
 
-                if (pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn) !=
-                    S_OK) {
-                  // No specific settings found, which indicates system-managed
+              if (pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn) !=
+                  S_OK) {
+                // No specific settings found, which can indicate system-managed
+                if (!systemManagedKnown) {
                   info.systemManaged = true;
-                  LOG_DEBUG << "  Page file is system-managed (no specific "
-                               "settings found)"
-                           ;
-                } else {
+                }
+                LOG_DEBUG << "  Page file is system-managed (no specific "
+                             "settings found)"
+                         ;
+              } else {
+                if (!systemManagedKnown) {
                   info.systemManaged = false;
-                  LOG_DEBUG << "  Page file has custom configuration"
-                           ;
+                }
+                LOG_DEBUG << "  Page file has custom configuration"
+                         ;
 
-                  // Try to get name from this object as well
-                  VARIANT vtProp;
-                  VariantInit(&vtProp);
-                  if (SUCCEEDED(pclsObj->Get(L"Name", 0, &vtProp, 0, 0))) {
-                    if (vtProp.vt == VT_BSTR && vtProp.bstrVal != nullptr) {
-                      // Convert BSTR to std::string properly
-                      char name[MAX_PATH] = {0};
-                      WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1, name,
-                                          MAX_PATH, NULL, NULL);
+                info.exists = true;
 
-                      // Extract drive letter if not already in locations
-                      size_t colonPos = strchr(name, ':') - name;
+                // Try to get name from this object as well
+                VARIANT vtProp;
+                VariantInit(&vtProp);
+                if (SUCCEEDED(pclsObj->Get(L"Name", 0, &vtProp, 0, 0))) {
+                  if (vtProp.vt == VT_BSTR && vtProp.bstrVal != nullptr) {
+                    // Convert BSTR to std::string properly
+                    char name[MAX_PATH] = {0};
+                    WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1, name,
+                                        MAX_PATH, NULL, NULL);
+
+                    // Extract drive letter if not already in locations
+                    char* colonPtr = strchr(name, ':');
+                    if (colonPtr != nullptr) {
+                      size_t colonPos = colonPtr - name;
                       if (colonPos > 0) {
                         std::string driveLetter =
                           std::string(1, name[colonPos - 1]) + ":";
@@ -1317,14 +1345,14 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
                         }
                       }
                     }
-                    VariantClear(&vtProp);
                   }
-
-                  pclsObj->Release();
+                  VariantClear(&vtProp);
                 }
 
-                pEnumerator->Release();
+                pclsObj->Release();
               }
+
+              pEnumerator->Release();
             }
           }
 
@@ -1334,33 +1362,51 @@ SystemWrapper::PageFileInfo SystemWrapper::getPageFileInfo() {
         pLoc->Release();
       }
 
-      CoUninitialize();
+      if (comInitialized) {
+        CoUninitialize();
+      }
     }
 
     // As a fallback, try to detect using registry
-    if (info.exists && info.locations.empty()) {
+    if (info.locations.empty()) {
       // Try to get pagefile location from registry
       HKEY hKey;
       if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
                         "SYSTEM\\CurrentControlSet\\Control\\Session "
                         "Manager\\Memory Management",
                         0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[MAX_PATH];
-        DWORD bufferSize = sizeof(buffer);
+        DWORD bufferSize = 0;
         DWORD type = 0;
 
-        if (RegQueryValueExA(hKey, "PagingFiles", NULL, &type, (LPBYTE)buffer,
-                             &bufferSize) == ERROR_SUCCESS) {
-          std::string pagingFiles = buffer;
-          // PagingFiles format is typically: "C:\\pagefile.sys 0 0"
-          if (!pagingFiles.empty() && pagingFiles.length() >= 2 &&
-              pagingFiles[1] == ':') {
-            std::string driveLetter =
-              pagingFiles.substr(0, 2);  // Get the drive letter with colon
-            info.locations.push_back(driveLetter);
-            info.primaryDriveLetter = driveLetter;
-            LOG_DEBUG << "  Registry page file location: [drive letter hidden for privacy]"
-                     ;
+        if (RegQueryValueExA(hKey, "PagingFiles", NULL, &type, nullptr,
+                             &bufferSize) == ERROR_SUCCESS &&
+            bufferSize > 0) {
+          std::vector<char> buffer(bufferSize + 2, 0);
+          if (RegQueryValueExA(hKey, "PagingFiles", NULL, &type,
+                               reinterpret_cast<LPBYTE>(buffer.data()),
+                               &bufferSize) == ERROR_SUCCESS) {
+            const char* ptr = buffer.data();
+            while (*ptr) {
+              std::string entry = ptr;
+              size_t colonPos = entry.find(':');
+              if (colonPos != std::string::npos && colonPos > 0) {
+                std::string driveLetter = entry.substr(colonPos - 1, 2);
+                auto it =
+                  std::find(info.locations.begin(), info.locations.end(),
+                            driveLetter);
+                if (it == info.locations.end()) {
+                  info.locations.push_back(driveLetter);
+                  info.exists = true;
+                  if (info.primaryDriveLetter.empty()) {
+                    info.primaryDriveLetter = driveLetter;
+                  }
+                  LOG_DEBUG << "  Registry page file location: [drive letter hidden for privacy]"
+                           ;
+                }
+              }
+
+              ptr += entry.size() + 1;
+            }
           }
         }
         RegCloseKey(hKey);

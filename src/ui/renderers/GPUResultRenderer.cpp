@@ -627,8 +627,221 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
   // Generate aggregated data from individual results
   auto aggregatedData = generateAggregatedGPUData(comparisonData);
 
+  const QPair<double, double> fpsValsCopy = fpsVals;
+
+  struct TestMetric {
+    QString objectName;
+    double userValue;
+    double compValue;
+    QString unit;
+    bool lowerIsBetter;
+  };
+
+  auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
+    QWidget* userBarContainer =
+      parentContainer->findChild<QWidget*>("userBarContainer");
+    if (!userBarContainer) {
+      return;
+    }
+
+    QHBoxLayout* userBarLayout =
+      userBarContainer->findChild<QHBoxLayout*>("user_bar_layout");
+    if (!userBarLayout) {
+      return;
+    }
+
+    QWidget* userBar = userBarContainer->findChild<QWidget*>("user_bar_fill");
+    QWidget* userSpacer =
+      userBarContainer->findChild<QWidget*>("user_bar_spacer");
+    if (!userBar || !userSpacer) {
+      return;
+    }
+
+    const int barIndex = userBarLayout->indexOf(userBar);
+    const int spacerIndex = userBarLayout->indexOf(userSpacer);
+    if (barIndex >= 0) {
+      userBarLayout->setStretch(barIndex, percentage);
+    }
+    if (spacerIndex >= 0) {
+      userBarLayout->setStretch(spacerIndex, 100 - percentage);
+    }
+  };
+
+  auto makeDisplayName = [](const QString& componentName,
+                            DiagnosticViewComponents::AggregationType type,
+                            bool hasSelection) {
+    if (!hasSelection) {
+      return QString("Select GPU to compare");
+    }
+
+    return (componentName == DownloadApiClient::generalAverageLabel())
+             ? componentName
+             : componentName + " (" +
+                 (type == DiagnosticViewComponents::AggregationType::Best
+                    ? "Best)"
+                    : "Avg)");
+  };
+
+  auto updateGpuBars =
+    [containerWidget, fpsValsCopy, updateUserBarLayout](
+      const GPUComparisonData* compData, const QString& displayName,
+      bool hasSelection) {
+      std::vector<TestMetric> tests = {
+        {"comparison_bar_fps", fpsValsCopy.first,
+         compData ? compData->fps : 0.0, "FPS", false}};
+
+      QHash<QString, TestMetric> testMap;
+      for (const auto& test : tests) {
+        testMap.insert(test.objectName, test);
+      }
+
+      QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
+        QRegularExpression("^comparison_bar_"));
+
+      for (QWidget* bar : allBars) {
+        auto it = testMap.find(bar->objectName());
+        if (it == testMap.end()) {
+          continue;
+        }
+
+        const TestMetric test = it.value();
+        const double maxValue =
+          std::max(test.userValue, test.compValue);
+        const double scaledMax = maxValue > 0 ? maxValue * 1.25 : 0.0;
+        const int userPercentage =
+          (test.userValue > 0 && scaledMax > 0)
+            ? static_cast<int>(
+                std::min(100.0, (test.userValue / scaledMax) * 100.0))
+            : 0;
+
+        QWidget* parentContainer = bar->parentWidget();
+        if (!parentContainer) {
+          continue;
+        }
+
+        QLabel* nameLabel =
+          parentContainer->findChild<QLabel*>("comp_name_label");
+        if (nameLabel) {
+          nameLabel->setText(displayName);
+          nameLabel->setStyleSheet(
+            hasSelection
+              ? "color: #ffffff; background: transparent;"
+              : "color: #888888; font-style: italic; background: transparent;");
+        }
+
+        updateUserBarLayout(parentContainer, userPercentage);
+
+        QLabel* valueLabel = parentContainer->findChild<QLabel*>("value_label");
+        QLayout* layout = bar->layout();
+        if (layout) {
+          QLayoutItem* child;
+          while ((child = layout->takeAt(0)) != nullptr) {
+            delete child->widget();
+            delete child;
+          }
+
+          if (!hasSelection || test.compValue <= 0) {
+            QWidget* emptyBar = new QWidget();
+            emptyBar->setStyleSheet("background-color: transparent;");
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(emptyBar);
+            }
+          } else {
+            const int compPercentage =
+              (scaledMax > 0)
+                ? static_cast<int>(std::min(
+                    100.0, (test.compValue / scaledMax) * 100.0))
+                : 0;
+
+            QWidget* barWidget = new QWidget();
+            barWidget->setFixedHeight(16);
+            barWidget->setStyleSheet(
+              "background-color: #FF4444; border-radius: 2px;");
+
+            QWidget* spacer = new QWidget();
+            spacer->setStyleSheet("background-color: transparent;");
+
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(barWidget, compPercentage);
+              newLayout->addWidget(spacer, 100 - compPercentage);
+            }
+          }
+        }
+
+        if (valueLabel) {
+          if (!hasSelection || test.compValue <= 0) {
+            valueLabel->setText("-");
+            valueLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          } else {
+            valueLabel->setText(
+              QString("%1 %2").arg(test.compValue, 0, 'f', 1).arg(test.unit));
+            valueLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+        }
+
+        QWidget* userBarContainer =
+          parentContainer->findChild<QWidget*>("userBarContainer");
+        QWidget* userBarFill = userBarContainer
+                                 ? userBarContainer->findChild<QWidget*>(
+                                     "user_bar_fill")
+                                 : nullptr;
+        if (!userBarFill) {
+          continue;
+        }
+
+        QLabel* existingLabel =
+          userBarFill->findChild<QLabel*>("percentageLabel");
+        if (existingLabel) {
+          delete existingLabel;
+        }
+
+        if (hasSelection && test.compValue > 0 && test.userValue > 0) {
+          const double percentChange =
+            ((test.userValue / test.compValue) - 1.0) * 100.0;
+
+          QString percentText;
+          QString percentColor;
+
+          const bool isBetter = percentChange > 0;
+          const bool isApproxEqual = qAbs(percentChange) < 1.0;
+
+          if (isApproxEqual) {
+            percentText = "≈";
+            percentColor = "#FFAA00";
+          } else {
+            percentText =
+              QString("%1%2%")
+                .arg(isBetter ? "+" : "")
+                .arg(percentChange, 0, 'f', 1);
+            percentColor = isBetter ? "#44FF44" : "#FF4444";
+          }
+
+          QHBoxLayout* overlayLayout =
+            userBarFill->findChild<QHBoxLayout*>("overlayLayout");
+          if (!overlayLayout) {
+            overlayLayout = new QHBoxLayout(userBarFill);
+            overlayLayout->setObjectName("overlayLayout");
+            overlayLayout->setContentsMargins(0, 0, 0, 0);
+          }
+
+          QLabel* percentageLabel = new QLabel(percentText);
+          percentageLabel->setObjectName("percentageLabel");
+          percentageLabel->setStyleSheet(
+            QString(
+              "color: %1; background: transparent; font-weight: bold;")
+              .arg(percentColor));
+          percentageLabel->setAlignment(Qt::AlignCenter);
+          overlayLayout->addWidget(percentageLabel);
+        }
+      }
+    };
+
   // Create a callback function to handle selection changes
-  auto selectionCallback = [containerWidget, fpsVals, downloadClient](
+  auto selectionCallback = [downloadClient, makeDisplayName, updateGpuBars](
                              const QString& componentName,
                              const QString& originalFullName,
                              DiagnosticViewComponents::AggregationType type,
@@ -638,313 +851,40 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
              << originalFullName.toStdString() << "', aggType='"
              << (type == DiagnosticViewComponents::AggregationType::Best ? "Best" : "Avg")
              << "', havePerfData=" << (gpuData.fps > 0);
-    // Decide if we can/should fetch from the server
-    const bool hasClient = (downloadClient != nullptr);
-    const bool hasOrig = !originalFullName.trimmed().isEmpty();
-    const bool hasComp = !componentName.trimmed().isEmpty();
-    const bool canFetch = hasClient && hasOrig && hasComp;
-    LOG_INFO << "GPUResultRenderer: fetch gating - hasClient=" << hasClient
-             << ", hasOrig=" << hasOrig << ", hasComp=" << hasComp
-             << ", canFetch=" << canFetch;
 
-    // Always fetch from server when a valid original model name is available.
-    // This matches CPU/Memory/Drive behavior and lets the client cache handle repeats.
-    if (canFetch) {
+    if (downloadClient && !componentName.isEmpty() && gpuData.fps <= 0) {
       LOG_INFO << "GPUResultRenderer: Fetching network data for GPU: "
                << componentName.toStdString() << " using original name: "
                << originalFullName.toStdString();
 
       downloadClient->fetchComponentData(
         "gpu", originalFullName,
-        [containerWidget, fpsVals, componentName, type]
+        [componentName, type, makeDisplayName, updateGpuBars]
         (bool success, const ComponentData& networkData, const QString& error) {
-          
           if (success) {
-            LOG_INFO << "GPUResultRenderer: Successfully fetched GPU data for " << componentName.toStdString();
-            
-            // Convert network data to GPUComparisonData
-            GPUComparisonData fetchedGpuData = convertNetworkDataToGPU(networkData);
-            
-            // Find all comparison bars
-            QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-              QRegularExpression("^comparison_bar_"));
-            
-            // Create display name
-            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-              ? componentName
-              : componentName + " (" +
-                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-            
-            LOG_INFO << "GPUResultRenderer: Updating comparison bars with fetched data";
-            
-            // Build test data with the fetched values
-            struct TestData {
-              QString objectName;
-              double value;
-              QString unit;
-            };
-            
-            std::vector<TestData> tests = {
-              {"comparison_bar_fps", fetchedGpuData.fps, "FPS"}
-            };
-            
-            // Update each comparison bar with fetched data
-            for (QWidget* bar : allBars) {
-              QWidget* parentContainer = bar->parentWidget();
-              if (parentContainer) {
-                QLabel* nameLabel = parentContainer->findChild<QLabel*>("comp_name_label");
-                if (nameLabel) {
-                  nameLabel->setText(displayName);
-                  nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-                }
-                
-                // Update the value label and bar based on bar type
-                for (const auto& test : tests) {
-                  if (bar->objectName() == test.objectName && test.value > 0) {
-                    LOG_INFO << "GPUResultRenderer: Updating bar " << test.objectName.toStdString() 
-                             << " with value " << test.value;
-                    
-                    QLabel* valueLabel = bar->parentWidget()->findChild<QLabel*>("value_label");
-                    if (valueLabel) {
-                      valueLabel->setText(QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-                      valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
-                    }
-                    
-                    // Also update the bar visual (simplified approach)
-                    QLayout* layout = bar->layout();
-                    if (layout) {
-                      // Remove existing items
-                      QLayoutItem* child;
-                      while ((child = layout->takeAt(0)) != nullptr) {
-                        delete child->widget();
-                        delete child;
-                      }
-                      
-                      // Calculate percentage based on user's max FPS value
-                      double maxValue = fpsVals.second * 1.25;
-                      int percentage = test.value <= 0 ? 0 : 
-                        static_cast<int>(std::min(100.0, (test.value / maxValue) * 100.0));
-                      
-                      // Create a comparison bar
-                      QWidget* barWidget = new QWidget();
-                      barWidget->setFixedHeight(16);
-                      barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
-                      
-                      QWidget* spacer = new QWidget();
-                      spacer->setStyleSheet("background-color: transparent;");
-                      
-                      QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-                      if (newLayout) {
-                        newLayout->addWidget(barWidget, percentage);
-                        newLayout->addWidget(spacer, 100 - percentage);
-                      }
-                    }
-                    break;
-                  }
-                }
-              }
-            }
-            
+            LOG_INFO << "GPUResultRenderer: Successfully fetched GPU data for "
+                     << componentName.toStdString();
+
+            GPUComparisonData fetchedGpuData =
+              convertNetworkDataToGPU(networkData);
+            const QString displayName =
+              makeDisplayName(componentName, type, true);
+            updateGpuBars(&fetchedGpuData, displayName, true);
           } else {
-            LOG_ERROR << "GPUResultRenderer: Failed to fetch GPU data for " << componentName.toStdString() 
-                      << ": " << error.toStdString();
-            // Continue with empty/placeholder data
+            LOG_ERROR << "GPUResultRenderer: Failed to fetch GPU data for "
+                      << componentName.toStdString() << ": "
+                      << error.toStdString();
           }
         });
 
-      return; // Exit early - the network callback will handle the UI update
-    } else if (hasClient && hasComp && !hasOrig) {
-      LOG_WARN << "GPUResultRenderer: No originalFullName for '" << componentName.toStdString() << "'; skipping network fetch.";
-    }
-    // Find all comparison bars
-    QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-      QRegularExpression("^comparison_bar_"));
-
-    if (componentName.isEmpty()) {
-      LOG_WARN << "GPUResultRenderer: Empty component selection; resetting bars.";
-      // Reset all bars if user selects the placeholder option
-      for (QWidget* bar : allBars) {
-        QLabel* valueLabel = bar->findChild<QLabel*>("value_label");
-        QLabel* nameLabel =
-          bar->parentWidget()->findChild<QLabel*>("comp_name_label");
-
-        if (valueLabel) {
-          valueLabel->setText("-");
-          valueLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        if (nameLabel) {
-          nameLabel->setText("Select GPU to compare");
-          nameLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        QLayout* layout = bar->layout();
-        if (layout) {
-          // Clear existing layout
-          QLayoutItem* child;
-          while ((child = layout->takeAt(0)) != nullptr) {
-            delete child->widget();
-            delete child;
-          }
-
-          // Add empty placeholder
-          QWidget* emptyBar = new QWidget();
-          emptyBar->setStyleSheet("background-color: transparent;");
-
-          QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-          if (newLayout) {
-            newLayout->addWidget(emptyBar);
-          }
-        }
-      }
       return;
     }
 
-    // Create display name with aggregation type
-    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-      ? componentName
-      : componentName + " (" +
-          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-
-    // Structure to hold test data for updating bars
-    struct TestData {
-      QString objectName;
-      double value;
-      double maxValue;
-      QString unit;
-      bool lowerIsBetter;
-    };
-
-    std::vector<TestData> tests = {
-      {"comparison_bar_fps", gpuData.fps, fpsVals.second, "FPS", false}};
-
-    // Update all comparison bars
-    for (QWidget* bar : allBars) {
-      QWidget* parentContainer = bar->parentWidget();
-      if (parentContainer) {
-        QLabel* nameLabel =
-          parentContainer->findChild<QLabel*>("comp_name_label");
-        if (nameLabel) {
-          nameLabel->setText(displayName);
-          nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-        }
-
-        for (const auto& test : tests) {
-          if (bar->objectName() == test.objectName) {
-            // Find the value label and update it
-            QLabel* valueLabel =
-              bar->parentWidget()->findChild<QLabel*>("value_label");
-            if (valueLabel) {
-              valueLabel->setText(
-                QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-              valueLabel->setStyleSheet(
-                "color: #FF4444; background: transparent;");
-            }
-
-            // Update the bar width with scaled value
-            QLayout* layout = bar->layout();
-            if (layout) {
-              // Remove existing items
-              QLayoutItem* child;
-              while ((child = layout->takeAt(0)) != nullptr) {
-                delete child->widget();
-                delete child;
-              }
-
-              // Calculate scaled percentage (0-100%)
-              double scaledMaxValue =
-                test.maxValue * 1.25;  // Same scaling factor as in
-                                       // createComparisonPerformanceBar
-              int percentage =
-                test.value <= 0
-                  ? 0
-                  : static_cast<int>(
-                      std::min(100.0, (test.value / scaledMaxValue) * 100.0));
-
-              // Create bar and spacer
-              QWidget* barWidget = new QWidget();
-              barWidget->setFixedHeight(16);
-              barWidget->setStyleSheet(
-                "background-color: #FF4444; border-radius: 2px;");
-
-              QWidget* spacer = new QWidget();
-              spacer->setStyleSheet("background-color: transparent;");
-
-              QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-              if (newLayout) {
-                newLayout->addWidget(barWidget, percentage);
-                newLayout->addWidget(spacer, 100 - percentage);
-              }
-            }
-
-            // Also update percentage difference with user's result
-            QWidget* userBar =
-              parentContainer->findChild<QWidget*>("userBarContainer");
-            if (userBar) {
-              // Find if there's an existing percentage label to remove
-              QLabel* existingLabel =
-                userBar->findChild<QLabel*>("percentageLabel");
-              if (existingLabel) {
-                delete existingLabel;
-              }
-
-              // Get the matching user value to calculate percentage
-              double userValue = fpsVals.first;
-
-              // Only add percentage if we have valid values
-              if (userValue > 0 && test.value > 0) {
-                // Calculate percentage difference
-                double percentChange = ((userValue / test.value) - 1.0) * 100.0;
-
-                QString percentText;
-                QString percentColor;
-
-                // Determine if user result is better or worse
-                bool isBetter =
-                  percentChange > 0;  // Higher FPS is always better
-                bool isApproxEqual = qAbs(percentChange) < 1.0;
-
-                if (isApproxEqual) {
-                  percentText = "≈";
-                  percentColor = "#FFAA00";  // Yellow for equal
-                } else {
-                  percentText =
-                    QString("%1%2%")
-                      .arg(isBetter ? "+"
-                                    : "")  // Add + prefix for better results
-                      .arg(percentChange, 0, 'f', 1);
-                  percentColor =
-                    isBetter ? "#44FF44"
-                             : "#FF4444";  // Green for better, red for worse
-                }
-
-                // Create an overlay layout if it doesn't exist
-                QHBoxLayout* overlayLayout =
-                  userBar->findChild<QHBoxLayout*>("overlayLayout");
-                if (!overlayLayout) {
-                  overlayLayout = new QHBoxLayout(userBar);
-                  overlayLayout->setObjectName("overlayLayout");
-                  overlayLayout->setContentsMargins(0, 0, 0, 0);
-                }
-
-                // Create and add percentage label
-                QLabel* percentageLabel = new QLabel(percentText);
-                percentageLabel->setObjectName("percentageLabel");
-                percentageLabel->setStyleSheet(
-                  QString(
-                    "color: %1; background: transparent; font-weight: bold;")
-                    .arg(percentColor));
-                percentageLabel->setAlignment(Qt::AlignCenter);
-                overlayLayout->addWidget(percentageLabel);
-              }
-            }
-            break;
-          }
-        }
-      }
-    }
+    const bool hasSelection = !componentName.isEmpty();
+    const QString displayName =
+      makeDisplayName(componentName, type, hasSelection);
+    updateGpuBars(hasSelection ? &gpuData : nullptr, displayName,
+                  hasSelection);
   };
 
   // Use the shared helper to create the dropdown

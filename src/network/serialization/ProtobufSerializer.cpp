@@ -742,6 +742,7 @@ void ProtobufSerializer::populateCPUData(google::protobuf::Message* cpuDataMsg, 
             if (coldMap.contains("min_response_time_us")) cold->set_min_response_time_us(coldMap["min_response_time_us"].toDouble());
             if (coldMap.contains("std_dev_us")) cold->set_std_dev_us(coldMap["std_dev_us"].toDouble());
             if (coldMap.contains("variance_us")) cold->set_variance_us(coldMap["variance_us"].toDouble());
+            if (coldMap.contains("jitter_us")) cold->set_jitter_us(coldMap["jitter_us"].toDouble());
         }
 
         if (infoMap.contains("cores_detail")) {
@@ -1154,6 +1155,12 @@ void ProtobufSerializer::populateSystemData(google::protobuf::Message* systemDat
             if (bgMap.contains("system_interrupt_time")) bg->set_system_interrupt_time(bgMap["system_interrupt_time"].toDouble());
             if (bgMap.contains("total_cpu_usage")) bg->set_total_cpu_usage(bgMap["total_cpu_usage"].toDouble());
             if (bgMap.contains("total_gpu_usage")) bg->set_total_gpu_usage(bgMap["total_gpu_usage"].toDouble());
+            if (bgMap.contains("peak_system_dpc_time")) bg->set_peak_system_dpc_time(bgMap["peak_system_dpc_time"].toDouble());
+            if (bgMap.contains("peak_system_interrupt_time")) bg->set_peak_system_interrupt_time(bgMap["peak_system_interrupt_time"].toDouble());
+            if (bgMap.contains("peak_cpu_usage")) bg->set_peak_cpu_usage(bgMap["peak_cpu_usage"].toDouble());
+            if (bgMap.contains("peak_gpu_usage")) bg->set_peak_gpu_usage(bgMap["peak_gpu_usage"].toDouble());
+            if (bgMap.contains("system_disk_io")) bg->set_system_disk_io(bgMap["system_disk_io"].toDouble());
+            if (bgMap.contains("peak_system_disk_io")) bg->set_peak_system_disk_io(bgMap["peak_system_disk_io"].toDouble());
             
             if (bgMap.contains("memory_metrics")) {
                 QVariantMap mmMap = bgMap["memory_metrics"].toMap();

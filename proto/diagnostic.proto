@@ -30,6 +30,7 @@ message MenuResponse {
   repeated string available_memory = 3;
   repeated string available_drives = 4;
   map<string, string> endpoints = 5;
+  uint64 total_runs = 6;
 }
 
 // ==================== DIAGNOSTIC SUBMISSION ====================
@@ -97,6 +98,7 @@ message CPUColdStart {
   double min_response_time_us = 3;
   double std_dev_us = 4;
   double variance_us = 5;
+  double jitter_us = 6;
 }
 
 message CPUCoreDetail {
@@ -346,6 +348,12 @@ message BackgroundActivity {
   double system_interrupt_time = 13;
   double total_cpu_usage = 14;
   double total_gpu_usage = 15;
+  double peak_system_dpc_time = 16;
+  double peak_system_interrupt_time = 17;
+  double peak_cpu_usage = 18;
+  double peak_gpu_usage = 19;
+  double system_disk_io = 20;
+  double peak_system_disk_io = 21;
 }
 
 message MemoryMetrics {
@@ -484,6 +492,7 @@ message CPUColdStartComp {
   double min_response_time_us = 2;
   double max_response_time_us = 3;
   double std_dev_us = 4;
+  double jitter_us = 5;
 }
 
 message CPUCacheComp {

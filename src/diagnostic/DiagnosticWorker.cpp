@@ -1447,6 +1447,12 @@ QJsonObject DiagnosticWorker::resultsToJson() const {
     coldStartInfo["max_response_time_us"] = cpuData.coldStart.maxResponseTimeUs;
     coldStartInfo["std_dev_us"] = cpuData.coldStart.stdDevUs;
     coldStartInfo["variance_us"] = cpuData.coldStart.varianceUs;
+    if (cpuData.coldStart.minResponseTimeUs > 0 &&
+        cpuData.coldStart.maxResponseTimeUs > 0) {
+      coldStartInfo["jitter_us"] =
+        cpuData.coldStart.maxResponseTimeUs -
+        cpuData.coldStart.minResponseTimeUs;
+    }
     cpuInfo["cold_start"] = coldStartInfo;
   }
 
@@ -2119,6 +2125,13 @@ QJsonObject DiagnosticWorker::resultsToJson() const {
     backgroundData.systemGpuUsage;  // Use actual value instead of -1.0
   backgroundInfo["system_dpc_time"] = backgroundData.systemDpcTime;
   backgroundInfo["system_interrupt_time"] = backgroundData.systemInterruptTime;
+  backgroundInfo["peak_system_dpc_time"] = backgroundData.peakSystemDpcTime;
+  backgroundInfo["peak_system_interrupt_time"] =
+    backgroundData.peakSystemInterruptTime;
+  backgroundInfo["peak_cpu_usage"] = backgroundData.peakSystemCpuUsage;
+  backgroundInfo["peak_gpu_usage"] = backgroundData.peakSystemGpuUsage;
+  backgroundInfo["system_disk_io"] = backgroundData.systemDiskIO;
+  backgroundInfo["peak_system_disk_io"] = backgroundData.peakSystemDiskIO;
 
   // Add the detailed memory metrics from background process monitoring
   if (backgroundData.physicalTotalKB > 0) {

@@ -1,6 +1,7 @@
 #include "CPUResultRenderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 
 #include <QApplication>
@@ -74,6 +75,18 @@ std::map<QString, CPUComparisonData> CPUResultRenderer::loadCPUComparisonData() 
           cpu.l3CacheKB = cacheObj["l3_kb"].toInt();
         }
 
+        // Get boost summary
+        if (rootObj.contains("boost_summary") &&
+            rootObj["boost_summary"].isObject()) {
+          QJsonObject boostObj = rootObj["boost_summary"].toObject();
+          cpu.boostAllCorePowerW = boostObj["all_core_power_w"].toDouble();
+          cpu.boostIdlePowerW = boostObj["idle_power_w"].toDouble();
+          cpu.boostSingleCorePowerW =
+            boostObj["single_core_power_w"].toDouble();
+          cpu.boostBestCore = boostObj["best_boosting_core"].toInt();
+          cpu.boostMaxDeltaMhz = boostObj["max_boost_delta_mhz"].toDouble();
+        }
+
         // Get cold start metrics
         if (rootObj.contains("cold_start") &&
             rootObj["cold_start"].isObject()) {
@@ -82,6 +95,11 @@ std::map<QString, CPUComparisonData> CPUResultRenderer::loadCPUComparisonData() 
           cpu.coldStartMin = coldStartObj["min_response_time_us"].toDouble();
           cpu.coldStartMax = coldStartObj["max_response_time_us"].toDouble();
           cpu.coldStartStdDev = coldStartObj["std_dev_us"].toDouble();
+          cpu.coldStartJitter = coldStartObj["jitter_us"].toDouble();
+          if (cpu.coldStartJitter <= 0 && cpu.coldStartMin > 0 &&
+              cpu.coldStartMax > 0) {
+            cpu.coldStartJitter = cpu.coldStartMax - cpu.coldStartMin;
+          }
         }
 
         // Get benchmark results
@@ -189,6 +207,17 @@ CPUComparisonData CPUResultRenderer::convertNetworkDataToCPU(const ComponentData
   cpu.boostClock = rootData.value("boost_frequency_mhz").toInt();
   cpu.architecture = rootData.value("architecture").toString();
 
+  if (rootData.contains("boost_summary") &&
+      rootData["boost_summary"].isObject()) {
+    QJsonObject boostObj = rootData["boost_summary"].toObject();
+    cpu.boostAllCorePowerW = boostObj.value("all_core_power_w").toDouble();
+    cpu.boostIdlePowerW = boostObj.value("idle_power_w").toDouble();
+    cpu.boostSingleCorePowerW =
+      boostObj.value("single_core_power_w").toDouble();
+    cpu.boostBestCore = boostObj.value("best_boosting_core").toInt();
+    cpu.boostMaxDeltaMhz = boostObj.value("max_boost_delta_mhz").toDouble();
+  }
+
   // Extract benchmark results from the nested object
   if (rootData.contains("benchmark_results") && rootData["benchmark_results"].isObject()) {
       QJsonObject benchmarks = rootData["benchmark_results"].toObject();
@@ -212,6 +241,11 @@ CPUComparisonData CPUResultRenderer::convertNetworkDataToCPU(const ComponentData
     cpu.coldStartMin = coldStart.value("min_response_time_us").toDouble();
     cpu.coldStartMax = coldStart.value("max_response_time_us").toDouble();
     cpu.coldStartStdDev = coldStart.value("std_dev_us").toDouble();
+    cpu.coldStartJitter = coldStart.value("jitter_us").toDouble();
+    if (cpu.coldStartJitter <= 0 && cpu.coldStartMin > 0 &&
+        cpu.coldStartMax > 0) {
+      cpu.coldStartJitter = cpu.coldStartMax - cpu.coldStartMin;
+    }
     
     LOG_INFO << "CPUResultRenderer: Cold start data - avg=" << cpu.coldStartAvg << "us";
   }
@@ -247,7 +281,9 @@ CPUComparisonData CPUResultRenderer::convertNetworkDataToCPU(const ComponentData
               QJsonObject boostObj = coreObj["boost_metrics"].toObject();
               CoreBoostMetrics metrics;
               metrics.allCoreClock = boostObj.value("all_core_clock_mhz").toInt();
+              metrics.idleClock = boostObj.value("idle_clock_mhz").toInt();
               metrics.singleLoadClock = boostObj.value("single_load_clock_mhz").toInt();
+              metrics.boostDelta = boostObj.value("boost_delta_mhz").toInt();
               cpu.boostMetrics.push_back(metrics);
           }
       }
@@ -326,6 +362,10 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<CPUCompariso
       double minSimdAvx = firstData.simdAvx;
       double minPrimeTime = firstData.primeTime;
       double minColdStartAvg = firstData.coldStartAvg;
+      double minColdStartMin = firstData.coldStartMin;
+      double minColdStartMax = firstData.coldStartMax;
+      double minColdStartStdDev = firstData.coldStartStdDev;
+      double minColdStartJitter = firstData.coldStartJitter;
 
       // For higher-is-better metrics, find maximum
       double maxGameSimSmall = firstData.gameSimSmall;
@@ -339,6 +379,10 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<CPUCompariso
       double sumSimdAvx = firstData.simdAvx;
       double sumPrimeTime = firstData.primeTime;
       double sumColdStartAvg = firstData.coldStartAvg;
+      double sumColdStartMin = firstData.coldStartMin;
+      double sumColdStartMax = firstData.coldStartMax;
+      double sumColdStartStdDev = firstData.coldStartStdDev;
+      double sumColdStartJitter = firstData.coldStartJitter;
       double sumGameSimSmall = firstData.gameSimSmall;
       double sumGameSimMedium = firstData.gameSimMedium;
       double sumGameSimLarge = firstData.gameSimLarge;
@@ -377,6 +421,22 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<CPUCompariso
           minColdStartAvg = std::min(minColdStartAvg, data.coldStartAvg);
           sumColdStartAvg += data.coldStartAvg;
         }
+        if (data.coldStartMin > 0) {
+          minColdStartMin = std::min(minColdStartMin, data.coldStartMin);
+          sumColdStartMin += data.coldStartMin;
+        }
+        if (data.coldStartMax > 0) {
+          minColdStartMax = std::min(minColdStartMax, data.coldStartMax);
+          sumColdStartMax += data.coldStartMax;
+        }
+        if (data.coldStartStdDev > 0) {
+          minColdStartStdDev = std::min(minColdStartStdDev, data.coldStartStdDev);
+          sumColdStartStdDev += data.coldStartStdDev;
+        }
+        if (data.coldStartJitter > 0) {
+          minColdStartJitter = std::min(minColdStartJitter, data.coldStartJitter);
+          sumColdStartJitter += data.coldStartJitter;
+        }
 
         // Update maximums for higher-is-better metrics
         if (data.gameSimSmall > 0) {
@@ -402,6 +462,10 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<CPUCompariso
       aggregated.bestResult.simdAvx = minSimdAvx;
       aggregated.bestResult.primeTime = minPrimeTime;
       aggregated.bestResult.coldStartAvg = minColdStartAvg;
+      aggregated.bestResult.coldStartMin = minColdStartMin;
+      aggregated.bestResult.coldStartMax = minColdStartMax;
+      aggregated.bestResult.coldStartStdDev = minColdStartStdDev;
+      aggregated.bestResult.coldStartJitter = minColdStartJitter;
       aggregated.bestResult.gameSimSmall = maxGameSimSmall;
       aggregated.bestResult.gameSimMedium = maxGameSimMedium;
       aggregated.bestResult.gameSimLarge = maxGameSimLarge;
@@ -414,6 +478,10 @@ std::map<QString, DiagnosticViewComponents::AggregatedComponentData<CPUCompariso
       aggregated.averageResult.simdAvx = sumSimdAvx / count;
       aggregated.averageResult.primeTime = sumPrimeTime / count;
       aggregated.averageResult.coldStartAvg = sumColdStartAvg / count;
+      aggregated.averageResult.coldStartMin = sumColdStartMin / count;
+      aggregated.averageResult.coldStartMax = sumColdStartMax / count;
+      aggregated.averageResult.coldStartStdDev = sumColdStartStdDev / count;
+      aggregated.averageResult.coldStartJitter = sumColdStartJitter / count;
       aggregated.averageResult.gameSimSmall = sumGameSimSmall / count;
       aggregated.averageResult.gameSimMedium = sumGameSimMedium / count;
       aggregated.averageResult.gameSimLarge = sumGameSimLarge / count;
@@ -573,12 +641,479 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
   // Generate aggregated data from individual results
   auto aggregatedData = generateAggregatedCPUData(comparisonData);
 
+  auto updateColdStartDetails =
+    [containerWidget](const CPUComparisonData* cpuData, bool isTypical,
+                      const QString& displayName) {
+      struct ColdStartField {
+        const char* labelName;
+        double CPUComparisonData::*value;
+      };
+
+      const ColdStartField fields[] = {
+        {"cold_start_min_value", &CPUComparisonData::coldStartMin},
+        {"cold_start_max_value", &CPUComparisonData::coldStartMax},
+        {"cold_start_std_value", &CPUComparisonData::coldStartStdDev},
+        {"cold_start_jitter_value", &CPUComparisonData::coldStartJitter},
+      };
+
+      for (const auto& field : fields) {
+        QLabel* valueLabel =
+          containerWidget->findChild<QLabel*>(field.labelName);
+        if (!valueLabel) {
+          continue;
+        }
+
+        const QVariant userValueVar = valueLabel->property("userValue");
+        if (!userValueVar.isValid()) {
+          continue;
+        }
+
+        const double userValue = userValueVar.toDouble();
+        const QString unitText = valueLabel->property("unit").toString();
+        const QString unit = unitText.isEmpty() ? "us" : unitText;
+        QString labelText = QString("%1 %2").arg(userValue, 0, 'f', 1).arg(unit);
+
+        const double compValue =
+          cpuData ? (cpuData->*field.value) : 0.0;
+        if (compValue > 0) {
+          const QString prefix =
+            isTypical ? "typical: " : displayName + ": ";
+          labelText =
+            QString("%1<br><span style='color: #FF4444;'>%2%3 %4</span>")
+              .arg(labelText)
+              .arg(prefix)
+              .arg(compValue, 0, 'f', 1)
+              .arg(unit);
+        }
+
+        valueLabel->setText(labelText);
+        valueLabel->setTextFormat(Qt::RichText);
+        valueLabel->setWordWrap(true);
+      }
+    };
+
+  auto updateBoostSection =
+    [containerWidget](const CPUComparisonData& cpuData,
+                      const QString& displayName, bool isTypical) {
+      QLabel* compCpuLabel =
+        containerWidget->findChild<QLabel*>("comp_cpu_name");
+      QLabel* compBaseClockLabel =
+        containerWidget->findChild<QLabel*>("comp_base_clock");
+      QLabel* compBoostClockLabel =
+        containerWidget->findChild<QLabel*>("comp_boost_clock");
+      QLabel* compAllCoreClockLabel =
+        containerWidget->findChild<QLabel*>("comp_all_core_clock");
+
+      if (!compCpuLabel && !compBaseClockLabel && !compBoostClockLabel &&
+          !compAllCoreClockLabel) {
+        return;
+      }
+
+      if (compCpuLabel) {
+        compCpuLabel->setText(displayName);
+        compCpuLabel->setStyleSheet("color: #ffffff; background: transparent;");
+      }
+
+      auto setPlaceholder = [](QLabel* label) {
+        if (!label) return;
+        label->setText("-");
+        label->setStyleSheet(
+          "color: #888888; font-style: italic; background: transparent;");
+      };
+
+      if (compBaseClockLabel) {
+        if (cpuData.baseClock > 0) {
+          compBaseClockLabel->setText(QString("%1 MHz").arg(cpuData.baseClock));
+          compBaseClockLabel->setStyleSheet(
+            "color: #FF4444; background: transparent;");
+          compBaseClockLabel->setVisible(true);
+        } else {
+          setPlaceholder(compBaseClockLabel);
+        }
+      }
+
+      int maxSingleBoost = 0;
+      int maxAllCore = 0;
+      for (const auto& boost : cpuData.boostMetrics) {
+        if (boost.singleLoadClock > maxSingleBoost) {
+          maxSingleBoost = boost.singleLoadClock;
+        }
+        if (boost.allCoreClock > maxAllCore) {
+          maxAllCore = boost.allCoreClock;
+        }
+      }
+      if (maxSingleBoost <= 0 && cpuData.boostClock > 0) {
+        maxSingleBoost = cpuData.boostClock;
+      }
+      if (maxSingleBoost <= 0 && cpuData.baseClock > 0 &&
+          cpuData.boostMaxDeltaMhz > 0) {
+        maxSingleBoost = static_cast<int>(
+          std::round(cpuData.baseClock + cpuData.boostMaxDeltaMhz));
+      }
+
+      const bool hasBaseClock = cpuData.baseClock > 0;
+      const double compSingleBoostPct =
+        (hasBaseClock && maxSingleBoost > 0)
+          ? (100.0 * (maxSingleBoost - cpuData.baseClock) /
+             cpuData.baseClock)
+          : 0.0;
+      const double compAllCoreBoostPct =
+        (hasBaseClock && maxAllCore > 0)
+          ? (100.0 * (maxAllCore - cpuData.baseClock) / cpuData.baseClock)
+          : 0.0;
+
+      if (compBoostClockLabel) {
+        if (maxSingleBoost > 0 ||
+            (isTypical && cpuData.boostMaxDeltaMhz > 0)) {
+          if (isTypical) {
+            if (cpuData.boostMaxDeltaMhz > 0) {
+              const QString deltaText =
+                QString("typical: +%1 MHz")
+                  .arg(cpuData.boostMaxDeltaMhz, 0, 'f', 1);
+              compBoostClockLabel->setText(deltaText);
+              compBoostClockLabel->setTextFormat(Qt::PlainText);
+              compBoostClockLabel->setStyleSheet(
+                "color: #FF4444; background: transparent;");
+            } else if (hasBaseClock) {
+              const QString pctText =
+                QString("%1%2%")
+                  .arg(compSingleBoostPct >= 0 ? "+" : "")
+                  .arg(compSingleBoostPct, 0, 'f', 1);
+              compBoostClockLabel->setText("typical: " + pctText);
+              compBoostClockLabel->setTextFormat(Qt::PlainText);
+              compBoostClockLabel->setStyleSheet(
+                "color: #FF4444; background: transparent;");
+            } else {
+              setPlaceholder(compBoostClockLabel);
+            }
+          } else {
+            QString boostText = QString("%1 MHz").arg(maxSingleBoost);
+            if (hasBaseClock) {
+              boostText +=
+                QString(" <span style='color: #FFAA00;'>(%1%2%)</span>")
+                  .arg(compSingleBoostPct >= 0 ? "+" : "")
+                  .arg(compSingleBoostPct, 0, 'f', 1);
+            }
+            compBoostClockLabel->setText(boostText);
+            compBoostClockLabel->setTextFormat(Qt::RichText);
+            compBoostClockLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+          compBoostClockLabel->setVisible(true);
+        } else {
+          setPlaceholder(compBoostClockLabel);
+        }
+      }
+
+      if (compAllCoreClockLabel) {
+        if (maxAllCore > 0) {
+          if (isTypical) {
+            if (hasBaseClock) {
+              const QString pctText =
+                QString("%1%2%")
+                  .arg(compAllCoreBoostPct >= 0 ? "+" : "")
+                  .arg(compAllCoreBoostPct, 0, 'f', 1);
+              compAllCoreClockLabel->setText("typical: " + pctText);
+              compAllCoreClockLabel->setTextFormat(Qt::PlainText);
+              compAllCoreClockLabel->setStyleSheet(
+                "color: #FF4444; background: transparent;");
+            } else {
+              setPlaceholder(compAllCoreClockLabel);
+            }
+          } else {
+            QString boostText = QString("%1 MHz").arg(maxAllCore);
+            if (hasBaseClock) {
+              boostText +=
+                QString(" <span style='color: #FFAA00;'>(%1%2%)</span>")
+                  .arg(compAllCoreBoostPct >= 0 ? "+" : "")
+                  .arg(compAllCoreBoostPct, 0, 'f', 1);
+            }
+            compAllCoreClockLabel->setText(boostText);
+            compAllCoreClockLabel->setTextFormat(Qt::RichText);
+            compAllCoreClockLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+          compAllCoreClockLabel->setVisible(true);
+        } else {
+          setPlaceholder(compAllCoreClockLabel);
+        }
+      }
+    };
+
+  struct TestMetric {
+    QString objectName;
+    double userValue;
+    double compValue;
+    QString unit;
+    bool lowerIsBetter;
+    int groupId;
+  };
+
+  constexpr int kGroupCore = 0;
+  constexpr int kGroupSimd = 1;
+  constexpr int kGroupPrime = 2;
+  constexpr int kGroupGameSim = 3;
+  constexpr int kGroupColdStart = 4;
+
+  const QPair<double, double> singleCoreValsCopy = singleCoreVals;
+  const QPair<double, double> fourThreadValsCopy = fourThreadVals;
+  const QPair<double, double> simdScalarValsCopy = simdScalarVals;
+  const QPair<double, double> simdAvxValsCopy = simdAvxVals;
+  const QPair<double, double> primeTimeValsCopy = primeTimeVals;
+  const QPair<double, double> gameSimSmallValsCopy = gameSimSmallVals;
+  const QPair<double, double> gameSimMediumValsCopy = gameSimMediumVals;
+  const QPair<double, double> gameSimLargeValsCopy = gameSimLargeVals;
+  const QPair<double, double> coldStartValsCopy = coldStartVals;
+
+  auto buildTests =
+    [singleCoreValsCopy, fourThreadValsCopy, simdScalarValsCopy,
+     simdAvxValsCopy, primeTimeValsCopy, gameSimSmallValsCopy,
+     gameSimMediumValsCopy, gameSimLargeValsCopy, coldStartValsCopy](
+      const CPUComparisonData* compData) {
+    const double compSingle = compData ? compData->singleCoreTime : 0.0;
+    const double compFour = compData ? compData->fourThreadTime : 0.0;
+    const double compScalar = compData ? compData->simdScalar : 0.0;
+    const double compAvx = compData ? compData->simdAvx : 0.0;
+    const double compPrime = compData ? compData->primeTime : 0.0;
+    const double compSmall =
+      compData ? (compData->gameSimSmall / 1000000.0) : 0.0;
+    const double compMedium =
+      compData ? (compData->gameSimMedium / 1000000.0) : 0.0;
+    const double compLarge =
+      compData ? (compData->gameSimLarge / 1000000.0) : 0.0;
+    const double compCold = compData ? compData->coldStartAvg : 0.0;
+
+    std::vector<TestMetric> tests = {
+      {"comparison_bar_single_core", singleCoreValsCopy.first, compSingle, "ms",
+       true, kGroupCore},
+      {"comparison_bar_four_thread", fourThreadValsCopy.first, compFour, "ms", true,
+       kGroupCore},
+      {"comparison_bar_scalar", simdScalarValsCopy.first, compScalar, "I¬s", true,
+       kGroupSimd},
+      {"comparison_bar_avx", simdAvxValsCopy.first, compAvx, "I¬s", true,
+       kGroupSimd},
+      {"comparison_bar_prime", primeTimeValsCopy.first, compPrime, "ms", true,
+       kGroupPrime},
+      {"comparison_bar_small", gameSimSmallValsCopy.first / 1000000.0, compSmall,
+       "M ups", false, kGroupGameSim},
+      {"comparison_bar_medium", gameSimMediumValsCopy.first / 1000000.0, compMedium,
+       "M ups", false, kGroupGameSim},
+      {"comparison_bar_large", gameSimLargeValsCopy.first / 1000000.0, compLarge,
+       "M ups", false, kGroupGameSim},
+      {"comparison_bar_cold_start", coldStartValsCopy.first, compCold, "I¬s", true,
+       kGroupColdStart}};
+
+    return tests;
+  };
+
+  auto computeGroupMax = [](const std::vector<TestMetric>& tests) {
+    QMap<int, double> groupMax;
+    for (const auto& test : tests) {
+      if (test.userValue > 0) {
+        groupMax[test.groupId] =
+          std::max(groupMax.value(test.groupId, 0.0), test.userValue);
+      }
+      if (test.compValue > 0) {
+        groupMax[test.groupId] =
+          std::max(groupMax.value(test.groupId, 0.0), test.compValue);
+      }
+    }
+    return groupMax;
+  };
+
+  auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
+    QWidget* userBarContainer =
+      parentContainer->findChild<QWidget*>("userBarContainer");
+    if (!userBarContainer) {
+      return;
+    }
+
+    QHBoxLayout* userBarLayout =
+      userBarContainer->findChild<QHBoxLayout*>("user_bar_layout");
+    if (!userBarLayout) {
+      return;
+    }
+
+    QWidget* userBar = userBarContainer->findChild<QWidget*>("user_bar_fill");
+    QWidget* userSpacer =
+      userBarContainer->findChild<QWidget*>("user_bar_spacer");
+    if (!userBar || !userSpacer) {
+      return;
+    }
+
+    const int barIndex = userBarLayout->indexOf(userBar);
+    const int spacerIndex = userBarLayout->indexOf(userSpacer);
+    if (barIndex >= 0) {
+      userBarLayout->setStretch(barIndex, percentage);
+    }
+    if (spacerIndex >= 0) {
+      userBarLayout->setStretch(spacerIndex, 100 - percentage);
+    }
+  };
+
+  auto updateComparisonBars =
+    [computeGroupMax, updateUserBarLayout](
+      const QList<QWidget*>& allBars, const std::vector<TestMetric>& tests,
+      const QString& displayName, bool hasSelection) {
+      QHash<QString, TestMetric> testMap;
+      for (const auto& test : tests) {
+        testMap.insert(test.objectName, test);
+      }
+
+      const QMap<int, double> groupMax = computeGroupMax(tests);
+
+      for (QWidget* bar : allBars) {
+        auto it = testMap.find(bar->objectName());
+        if (it == testMap.end()) {
+          continue;
+        }
+
+        const TestMetric test = it.value();
+        const double maxValue = groupMax.value(test.groupId, 0.0);
+        const double scaledMax = maxValue > 0 ? maxValue * 1.25 : 0.0;
+        const int userPercentage =
+          (test.userValue > 0 && scaledMax > 0)
+            ? static_cast<int>(
+                std::min(100.0, (test.userValue / scaledMax) * 100.0))
+            : 0;
+
+        QWidget* parentContainer = bar->parentWidget();
+        if (!parentContainer) {
+          continue;
+        }
+
+        QLabel* nameLabel =
+          parentContainer->findChild<QLabel*>("comp_name_label");
+        if (nameLabel) {
+          if (hasSelection) {
+            nameLabel->setText(displayName);
+            nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
+          } else {
+            nameLabel->setText("Select CPU to compare");
+            nameLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          }
+        }
+
+        updateUserBarLayout(parentContainer, userPercentage);
+
+        QLabel* valueLabel = parentContainer->findChild<QLabel*>("value_label");
+        QLayout* layout = bar->layout();
+        if (layout) {
+          QLayoutItem* child;
+          while ((child = layout->takeAt(0)) != nullptr) {
+            delete child->widget();
+            delete child;
+          }
+
+          if (!hasSelection || test.compValue <= 0) {
+            QWidget* emptyBar = new QWidget();
+            emptyBar->setStyleSheet("background-color: transparent;");
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(emptyBar);
+            }
+          } else {
+            const int compPercentage =
+              (scaledMax > 0)
+                ? static_cast<int>(std::min(
+                    100.0, (test.compValue / scaledMax) * 100.0))
+                : 0;
+
+            QWidget* barWidget = new QWidget();
+            barWidget->setFixedHeight(16);
+            barWidget->setStyleSheet(
+              "background-color: #FF4444; border-radius: 2px;");
+
+            QWidget* spacer = new QWidget();
+            spacer->setStyleSheet("background-color: transparent;");
+
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(barWidget, compPercentage);
+              newLayout->addWidget(spacer, 100 - compPercentage);
+            }
+          }
+        }
+
+        if (valueLabel) {
+          if (!hasSelection || test.compValue <= 0) {
+            valueLabel->setText("-");
+            valueLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          } else {
+            valueLabel->setText(
+              QString("%1 %2").arg(test.compValue, 0, 'f', 1).arg(test.unit));
+            valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
+          }
+        }
+
+        QWidget* userBarContainer =
+          parentContainer->findChild<QWidget*>("userBarContainer");
+        QWidget* userBarFill = userBarContainer
+                                 ? userBarContainer->findChild<QWidget*>(
+                                     "user_bar_fill")
+                                 : nullptr;
+        if (userBarFill) {
+          QLabel* existingLabel =
+            userBarFill->findChild<QLabel*>("percentageLabel");
+          if (existingLabel) {
+            delete existingLabel;
+          }
+
+          if (hasSelection && test.compValue > 0 && test.userValue > 0) {
+            double percentChange = 0;
+            if (test.lowerIsBetter) {
+              percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+            } else {
+              percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+            }
+
+            QString percentText;
+            QString percentColor;
+
+            const bool isBetter =
+              (test.lowerIsBetter && percentChange < 0) ||
+              (!test.lowerIsBetter && percentChange > 0);
+            const bool isApproxEqual = qAbs(percentChange) < 1.0;
+
+            if (isApproxEqual) {
+              percentText = "≈";
+              percentColor = "#FFAA00";
+            } else {
+              percentText =
+                QString("%1%2%")
+                  .arg(isBetter ? "+" : "")
+                  .arg(percentChange, 0, 'f', 1);
+              percentColor = isBetter ? "#44FF44" : "#FF4444";
+            }
+
+            QHBoxLayout* overlayLayout =
+              userBarFill->findChild<QHBoxLayout*>("overlayLayout");
+            if (!overlayLayout) {
+              overlayLayout = new QHBoxLayout(userBarFill);
+              overlayLayout->setObjectName("overlayLayout");
+              overlayLayout->setContentsMargins(0, 0, 0, 0);
+            }
+
+            QLabel* percentageLabel = new QLabel(percentText);
+            percentageLabel->setObjectName("percentageLabel");
+            percentageLabel->setStyleSheet(
+              QString(
+                "color: %1; background: transparent; font-weight: bold;")
+                .arg(percentColor));
+            percentageLabel->setAlignment(Qt::AlignCenter);
+            overlayLayout->addWidget(percentageLabel);
+          }
+        }
+      }
+    };
+
   // Create a callback function to handle selection changes
   auto selectionCallback = [containerWidget, cpuTestsBox, gameSimBox,
-                            singleCoreVals, fourThreadVals, simdScalarVals,
-                            simdAvxVals, primeTimeVals, gameSimSmallVals,
-                            gameSimMediumVals, gameSimLargeVals, coldStartVals,
-                            downloadClient](
+                            downloadClient, updateColdStartDetails,
+                            updateBoostSection, buildTests,
+                            updateComparisonBars](
                              const QString& componentName,
                              const QString& originalFullName,
                              DiagnosticViewComponents::AggregationType type,
@@ -590,9 +1125,9 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
       LOG_INFO << "CPUResultRenderer: Fetching network data for CPU: " << componentName.toStdString() << " using original name: " << originalFullName.toStdString();
       
       downloadClient->fetchComponentData("cpu", originalFullName, 
-        [containerWidget, cpuTestsBox, gameSimBox, singleCoreVals, fourThreadVals, 
-         simdScalarVals, simdAvxVals, primeTimeVals, gameSimSmallVals,
-         gameSimMediumVals, gameSimLargeVals, coldStartVals, componentName, type]
+        [containerWidget, cpuTestsBox, gameSimBox, componentName, type,
+         updateColdStartDetails, updateBoostSection, buildTests,
+         updateComparisonBars]
         (bool success, const ComponentData& networkData, const QString& error) {
           
           if (success) {
@@ -615,93 +1150,13 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
             
             LOG_INFO << "CPUResultRenderer: Updating comparison bars with fetched data";
             
-            // Build test data with the fetched values (same logic as main callback)
-            struct TestData {
-              QString objectName;
-              double value;
-              QString unit;
-            };
-            
-            std::vector<TestData> tests = {
-              {"comparison_bar_single_core", fetchedCpuData.singleCoreTime, "ms"},
-              {"comparison_bar_four_thread", fetchedCpuData.fourThreadTime, "ms"},
-              {"comparison_bar_scalar", fetchedCpuData.simdScalar, "μs"},
-              {"comparison_bar_avx", fetchedCpuData.simdAvx, "μs"},
-              {"comparison_bar_prime", fetchedCpuData.primeTime, "ms"},
-              {"comparison_bar_small", fetchedCpuData.gameSimSmall / 1000000.0, "M ups"},
-              {"comparison_bar_medium", fetchedCpuData.gameSimMedium / 1000000.0, "M ups"},
-              {"comparison_bar_large", fetchedCpuData.gameSimLarge / 1000000.0, "M ups"},
-              {"comparison_bar_cold_start", fetchedCpuData.coldStartAvg, "μs"}
-            };
-            
-            // Update each comparison bar with fetched data
-            for (QWidget* bar : allBars) {
-              QWidget* parentContainer = bar->parentWidget();
-              if (parentContainer) {
-                QLabel* nameLabel = parentContainer->findChild<QLabel*>("comp_name_label");
-                if (nameLabel) {
-                  nameLabel->setText(displayName);
-                  nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-                }
-                
-                // Update the value label and bar based on bar type
-                for (const auto& test : tests) {
-                  if (bar->objectName() == test.objectName && test.value > 0) {
-                    LOG_INFO << "CPUResultRenderer: Updating bar " << test.objectName.toStdString() 
-                             << " with value " << test.value;
-                    
-                    QLabel* valueLabel = bar->parentWidget()->findChild<QLabel*>("value_label");
-                    if (valueLabel) {
-                      valueLabel->setText(QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-                      valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
-                    }
-                    
-                    // Also update the bar visual (simplified approach)
-                    QLayout* layout = bar->layout();
-                    if (layout) {
-                      // Remove existing items
-                      QLayoutItem* child;
-                      while ((child = layout->takeAt(0)) != nullptr) {
-                        delete child->widget();
-                        delete child;
-                      }
-                      
-                      // Scale comparison using the same maxValue as the user's bar for this test
-                      double maxValue = 0.0;
-                      const QString obj = bar->objectName();
-                      if (obj == "comparison_bar_single_core") maxValue = singleCoreVals.second;
-                      else if (obj == "comparison_bar_four_thread") maxValue = fourThreadVals.second;
-                      else if (obj == "comparison_bar_scalar") maxValue = simdScalarVals.second;
-                      else if (obj == "comparison_bar_avx") maxValue = simdAvxVals.second;
-                      else if (obj == "comparison_bar_prime") maxValue = primeTimeVals.second;
-                      else if (obj == "comparison_bar_small") maxValue = gameSimSmallVals.second / 1000000.0;
-                      else if (obj == "comparison_bar_medium") maxValue = gameSimMediumVals.second / 1000000.0;
-                      else if (obj == "comparison_bar_large") maxValue = gameSimLargeVals.second / 1000000.0;
-                      else if (obj == "comparison_bar_cold_start") maxValue = coldStartVals.second;
+            const std::vector<TestMetric> tests = buildTests(&fetchedCpuData);
+            updateComparisonBars(allBars, tests, displayName, true);
 
-                      const double scaledMaxValue = maxValue * 1.25;
-                      const int percentage = (test.value <= 0 || scaledMaxValue <= 0)
-                        ? 0
-                        : static_cast<int>(std::min(100.0, (test.value / scaledMaxValue) * 100.0));
-
-                      QWidget* barWidget = new QWidget();
-                      barWidget->setFixedHeight(16);
-                      barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
-                      
-                      QWidget* spacer = new QWidget();
-                      spacer->setStyleSheet("background-color: transparent;");
-                      
-                      QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-                      if (newLayout) {
-                        newLayout->addWidget(barWidget, percentage);
-                        newLayout->addWidget(spacer, 100 - percentage);
-                      }
-                    }
-                    break;
-                  }
-                }
-              }
-            }
+            const bool isTypical =
+              (componentName == DownloadApiClient::generalAverageLabel());
+            updateColdStartDetails(&fetchedCpuData, isTypical, displayName);
+            updateBoostSection(fetchedCpuData, displayName, isTypical);
             
           } else {
             LOG_ERROR << "CPUResultRenderer: Failed to fetch CPU data for " << componentName.toStdString() 
@@ -721,45 +1176,24 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
       QRegularExpression("^comparison_bar_"));
     allBars.append(gameBars);
 
-    if (componentName.isEmpty()) {
-      // Reset all bars if user selects the placeholder option
-      for (QWidget* bar : allBars) {
-        QLabel* valueLabel = bar->findChild<QLabel*>("value_label");
-        QLabel* nameLabel =
-          bar->parentWidget()->findChild<QLabel*>("comp_name_label");
+    const bool hasSelection = !componentName.isEmpty();
+    const bool isTypical =
+      (componentName == DownloadApiClient::generalAverageLabel());
+    const QString displayName =
+      hasSelection
+        ? (componentName == DownloadApiClient::generalAverageLabel()
+             ? componentName
+             : componentName + " (" +
+                 (type == DiagnosticViewComponents::AggregationType::Best
+                    ? "Best)"
+                    : "Avg)"))
+        : QString("Select CPU to compare");
 
-        if (valueLabel) {
-          valueLabel->setText("-");
-          valueLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
+    const std::vector<TestMetric> tests =
+      buildTests(hasSelection ? &cpuData : nullptr);
+    updateComparisonBars(allBars, tests, displayName, hasSelection);
 
-        if (nameLabel) {
-          nameLabel->setText("Select CPU to compare");
-          nameLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        QLayout* layout = bar->layout();
-        if (layout) {
-          // Clear existing layout
-          QLayoutItem* child;
-          while ((child = layout->takeAt(0)) != nullptr) {
-            delete child->widget();
-            delete child;
-          }
-
-          // Add empty placeholder
-          QWidget* emptyBar = new QWidget();
-          emptyBar->setStyleSheet("background-color: transparent;");
-
-          QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-          if (newLayout) {
-            newLayout->addWidget(emptyBar);
-          }
-        }
-      }
-      // Clear boost section as well when placeholder is selected
+    if (!hasSelection) {
       QLabel* compCpuLabel =
         containerWidget->findChild<QLabel*>("comp_cpu_name");
       QLabel* compBaseClockLabel =
@@ -790,283 +1224,12 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
           "color: #888888; font-style: italic; background: transparent;");
       }
 
+      updateColdStartDetails(nullptr, false, QString());
       return;
     }
 
-    // Build test data with the aggregated values
-    struct TestData {
-      QString objectName;
-      double value;
-      double maxValue;
-      QString unit;
-      bool lowerIsBetter;
-    };
-
-    // Extract max values from pairs for clarity and to potentially resolve
-    // compiler issues
-    double maxSingleCoreTime = singleCoreVals.second;
-    double maxFourThreadTime = fourThreadVals.second;
-    auto simdScalarSecond = simdScalarVals.second;
-    double maxSimdScalarVal = simdScalarSecond;
-    auto simdAvxSecond = simdAvxVals.second;
-    double maxSimdAvxVal = simdAvxSecond;
-    double maxPrimeTimeVal = primeTimeVals.second;
-    double maxGameSimSmallVal = gameSimSmallVals.second;
-    double maxGameSimMediumVal = gameSimMediumVals.second;
-    double maxGameSimLargeVal = gameSimLargeVals.second;
-    double maxColdStartVal = coldStartVals.second;
-
-    std::vector<TestData> tests = {
-      {"comparison_bar_single_core", cpuData.singleCoreTime, maxSingleCoreTime,
-       "ms", true},
-      {"comparison_bar_four_thread", cpuData.fourThreadTime, maxFourThreadTime,
-       "ms", true},
-      {"comparison_bar_scalar", cpuData.simdScalar, maxSimdScalarVal, "μs",
-       true},
-      {"comparison_bar_avx", cpuData.simdAvx, maxSimdAvxVal, "μs", true},
-      {"comparison_bar_prime", cpuData.primeTime, maxPrimeTimeVal, "ms", true},
-      {"comparison_bar_small", cpuData.gameSimSmall / 1000000.0,
-       maxGameSimSmallVal / 1000000.0, "M ups", false},
-      {"comparison_bar_medium", cpuData.gameSimMedium / 1000000.0,
-       maxGameSimMediumVal / 1000000.0, "M ups", false},
-      {"comparison_bar_large", cpuData.gameSimLarge / 1000000.0,
-       maxGameSimLargeVal / 1000000.0, "M ups", false},
-      {"comparison_bar_cold_start", cpuData.coldStartAvg, maxColdStartVal, "μs",
-       true}};
-
-    // Update boost info section if it exists
-    QLabel* compCpuLabel = containerWidget->findChild<QLabel*>("comp_cpu_name");
-    QLabel* compBaseClockLabel =
-      containerWidget->findChild<QLabel*>("comp_base_clock");
-    QLabel* compBoostClockLabel =
-      containerWidget->findChild<QLabel*>("comp_boost_clock");
-    QLabel* compAllCoreClockLabel =
-      containerWidget->findChild<QLabel*>("comp_all_core_clock");
-
-    // Get boost details from the CPU data
-    int maxSingleBoost = 0;
-    int maxAllCore = 0;
-
-    for (const auto& boost : cpuData.boostMetrics) {
-      if (boost.singleLoadClock > maxSingleBoost) {
-        maxSingleBoost = boost.singleLoadClock;
-      }
-      if (boost.allCoreClock > maxAllCore) {
-        maxAllCore = boost.allCoreClock;
-      }
-    }
-
-    // Calculate boost percentages for comparison CPU
-    double compSingleBoostPct =
-      cpuData.baseClock > 0
-        ? (100.0 * (maxSingleBoost - cpuData.baseClock) / cpuData.baseClock)
-        : 0;
-    double compAllCoreBoostPct =
-      cpuData.baseClock > 0
-        ? (100.0 * (maxAllCore - cpuData.baseClock) / cpuData.baseClock)
-        : 0;
-
-    // Create display name with aggregation type
-    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-      ? componentName
-      : componentName + " (" +
-          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-
-    // Update the CPU name in the boost section
-    if (compCpuLabel) {
-      compCpuLabel->setText(displayName);
-      compCpuLabel->setStyleSheet("color: #ffffff; background: transparent;");
-    }
-
-    // Update base clock with consistent styling
-    if (compBaseClockLabel && cpuData.baseClock > 0) {
-      compBaseClockLabel->setText(QString("%1 MHz").arg(cpuData.baseClock));
-      compBaseClockLabel->setStyleSheet(
-        "color: #FF4444; background: transparent;");
-      compBaseClockLabel->setVisible(true);
-    }
-
-    // Update single-core boost with consistent styling
-    if (compBoostClockLabel && maxSingleBoost > 0) {
-      compBoostClockLabel->setText(
-        QString("%1 MHz <span style='color: #FFAA00;'>(+%2%)</span>")
-          .arg(maxSingleBoost)
-          .arg(compSingleBoostPct, 0, 'f', 1));
-      compBoostClockLabel->setTextFormat(Qt::RichText);
-      compBoostClockLabel->setStyleSheet(
-        "color: #FF4444; background: transparent;");
-      compBoostClockLabel->setVisible(true);
-    }
-
-    // Update all-core boost with consistent styling
-    if (compAllCoreClockLabel && maxAllCore > 0) {
-      compAllCoreClockLabel->setText(
-        QString("%1 MHz <span style='color: #FFAA00;'>(+%2%)</span>")
-          .arg(maxAllCore)
-          .arg(compAllCoreBoostPct, 0, 'f', 1));
-      compAllCoreClockLabel->setTextFormat(Qt::RichText);
-      compAllCoreClockLabel->setStyleSheet(
-        "color: #FF4444; background: transparent;");
-      compAllCoreClockLabel->setVisible(true);
-    }
-
-    // Update all comparison bars
-    for (QWidget* bar : allBars) {
-      // Find the parent that contains the name_label (two levels up in
-      // hierarchy)
-      QWidget* parentContainer = bar->parentWidget();
-      if (parentContainer) {
-        QLabel* nameLabel =
-          parentContainer->findChild<QLabel*>("comp_name_label");
-        if (nameLabel) {
-          nameLabel->setText(displayName);
-          nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-        }
-
-        for (const auto& test : tests) {
-          if (bar->objectName() == test.objectName) {
-            // Skip updating this comparison if value is missing or invalid
-            if (test.value <= 0) {
-              continue;  // Skip this comparison entirely
-            }
-
-            // Find the value label and update it
-            QLabel* valueLabel =
-              bar->parentWidget()->findChild<QLabel*>("value_label");
-            if (valueLabel) {
-              valueLabel->setText(
-                QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-              valueLabel->setStyleSheet(
-                "color: #FF4444; background: transparent;");
-            }
-
-            // Update the bar width with scaled value
-            QLayout* layout = bar->layout();
-            if (layout) {
-              // Remove existing items
-              QLayoutItem* child;
-              while ((child = layout->takeAt(0)) != nullptr) {
-                delete child->widget();
-                delete child;
-              }
-
-              // Calculate scaled percentage (0-100%)
-              double scaledMax = test.maxValue * 1.25;  // 1/0.8 = 1.25
-              int percentage = test.value <= 0
-                                 ? 0
-                                 : static_cast<int>(std::min(
-                                     100.0, (test.value / scaledMax) * 100.0));
-
-              // Create bar and spacer
-              QWidget* barWidget = new QWidget();
-              barWidget->setFixedHeight(16);
-              barWidget->setStyleSheet(
-                "background-color: #FF4444; border-radius: 2px;");
-
-              QWidget* spacer = new QWidget();
-              spacer->setStyleSheet("background-color: transparent;");
-
-              QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-              if (newLayout) {
-                newLayout->addWidget(barWidget, percentage);
-                newLayout->addWidget(spacer, 100 - percentage);
-              }
-            }
-
-            // Also update the user bar to show percentage difference
-            QWidget* userBar =
-              parentContainer->findChild<QWidget*>("userBarContainer");
-            if (userBar) {
-              // Find if there's an existing percentage label to remove
-              QLabel* existingLabel =
-                userBar->findChild<QLabel*>("percentageLabel");
-              if (existingLabel) {
-                delete existingLabel;
-              }
-
-              // Get the matching user value to calculate percentage
-              double userValue = 0;
-              if (test.objectName == "comparison_bar_single_core")
-                userValue = singleCoreVals.first;
-              else if (test.objectName == "comparison_bar_four_thread")
-                userValue = fourThreadVals.first;
-              else if (test.objectName == "comparison_bar_scalar")
-                userValue = simdScalarVals.first;
-              else if (test.objectName == "comparison_bar_avx")
-                userValue = simdAvxVals.first;
-              else if (test.objectName == "comparison_bar_prime")
-                userValue = primeTimeVals.first;
-              else if (test.objectName == "comparison_bar_small")
-                userValue = gameSimSmallVals.first / 1000000;
-              else if (test.objectName == "comparison_bar_medium")
-                userValue = gameSimMediumVals.first / 1000000;
-              else if (test.objectName == "comparison_bar_large")
-                userValue = gameSimLargeVals.first / 1000000;
-              else if (test.objectName == "comparison_bar_cold_start")
-                userValue = coldStartVals.first;
-
-              // Only add percentage if we have valid values
-              if (userValue > 0 && test.value > 0) {
-                // Calculate percentage difference
-                double percentChange = 0;
-                if (test.lowerIsBetter) {
-                  // For lower-is-better metrics, negative percent means user is
-                  // better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                } else {
-                  // For higher-is-better metrics, positive percent means user
-                  // is better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                }
-
-                QString percentText;
-                QString percentColor;
-
-                // Determine if user result is better or worse
-                bool isBetter = (test.lowerIsBetter && percentChange < 0) ||
-                                (!test.lowerIsBetter && percentChange > 0);
-                bool isApproxEqual = qAbs(percentChange) < 1.0;
-
-                if (isApproxEqual) {
-                  percentText = "≈";
-                  percentColor = "#FFAA00";  // Yellow for equal
-                } else {
-                  percentText =
-                    QString("%1%2%")
-                      .arg(isBetter ? "+"
-                                    : "")  // Add + prefix for better results
-                      .arg(percentChange, 0, 'f', 1);
-                  percentColor =
-                    isBetter ? "#44FF44"
-                             : "#FF4444";  // Green for better, red for worse
-                }
-
-                // Create an overlay layout if it doesn't exist
-                QHBoxLayout* overlayLayout =
-                  userBar->findChild<QHBoxLayout*>("overlayLayout");
-                if (!overlayLayout) {
-                  overlayLayout = new QHBoxLayout(userBar);
-                  overlayLayout->setObjectName("overlayLayout");
-                  overlayLayout->setContentsMargins(0, 0, 0, 0);
-                }
-
-                // Create and add percentage label
-                QLabel* percentageLabel = new QLabel(percentText);
-                percentageLabel->setObjectName("percentageLabel");
-                percentageLabel->setStyleSheet(
-                  QString(
-                    "color: %1; background: transparent; font-weight: bold;")
-                    .arg(percentColor));
-                percentageLabel->setAlignment(Qt::AlignCenter);
-                overlayLayout->addWidget(percentageLabel);
-              }
-            }
-
-            break;
-          }
-        }
-      }
-    }
+    updateColdStartDetails(&cpuData, isTypical, displayName);
+    updateBoostSection(cpuData, displayName, isTypical);
   };
 
   // Use the shared helper to create the dropdown
@@ -1419,8 +1582,10 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     maxGameSimSmall = std::max(maxGameSimSmall, cpuData.gameSimSmall);
     maxGameSimMedium = std::max(maxGameSimMedium, cpuData.gameSimMedium);
     maxGameSimLarge = std::max(maxGameSimLarge, cpuData.gameSimLarge);
-    // No cold start comparison data yet, but keep the structure for future
-    // compatibility
+    if (cpuData.coldStartAvg > 0) {
+      maxColdStartResponse =
+        std::max(maxColdStartResponse, cpuData.coldStartAvg);
+    }
   }
 
   // Use global max values for consistent scaling
@@ -1438,9 +1603,10 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
   QPair<double, double> gameSimSmallVals(gameSimSmall, maxUPS);
   QPair<double, double> gameSimMediumVals(gameSimMedium, maxUPS);
   QPair<double, double> gameSimLargeVals(gameSimLarge, maxUPS);
-  QPair<double, double> coldStartVals(
-    coldStartAvg,
-    std::max(coldStartAvg * 1.5, 1000.0));  // Reasonable default max
+  double coldStartMaxScale = std::max(maxColdStartResponse, coldStartAvg);
+  coldStartMaxScale = std::max(coldStartMaxScale, coldStartAvg * 1.5);
+  coldStartMaxScale = std::max(coldStartMaxScale, 1000.0);
+  QPair<double, double> coldStartVals(coldStartAvg, coldStartMaxScale);
 
   // Add comparison performance bars for CPU tests
   cpuTestsLayout->addWidget(createComparisonPerformanceBar(
@@ -1516,6 +1682,11 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     QLabel* minValueLabel =
       new QLabel(QString("%1 μs").arg(coldStartMin, 0, 'f', 1));
     minValueLabel->setStyleSheet("color: #FFFFFF; font-weight: bold;");
+    minValueLabel->setObjectName("cold_start_min_value");
+    minValueLabel->setProperty("userValue", coldStartMin);
+    minValueLabel->setProperty("unit", minValueLabel->text().split(' ').last());
+    minValueLabel->setTextFormat(Qt::RichText);
+    minValueLabel->setWordWrap(true);
     coldStartGrid->addWidget(minLabel, 0, 0);
     coldStartGrid->addWidget(minValueLabel, 0, 1);
 
@@ -1524,6 +1695,11 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     QLabel* maxValueLabel =
       new QLabel(QString("%1 μs").arg(coldStartMax, 0, 'f', 1));
     maxValueLabel->setStyleSheet("color: #FFFFFF; font-weight: bold;");
+    maxValueLabel->setObjectName("cold_start_max_value");
+    maxValueLabel->setProperty("userValue", coldStartMax);
+    maxValueLabel->setProperty("unit", maxValueLabel->text().split(' ').last());
+    maxValueLabel->setTextFormat(Qt::RichText);
+    maxValueLabel->setWordWrap(true);
     coldStartGrid->addWidget(maxLabel, 0, 2);
     coldStartGrid->addWidget(maxValueLabel, 0, 3);
 
@@ -1532,6 +1708,11 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     QLabel* stdDevValueLabel =
       new QLabel(QString("%1 μs").arg(coldStartStdDev, 0, 'f', 1));
     stdDevValueLabel->setStyleSheet("color: #FFFFFF; font-weight: bold;");
+    stdDevValueLabel->setObjectName("cold_start_std_value");
+    stdDevValueLabel->setProperty("userValue", coldStartStdDev);
+    stdDevValueLabel->setProperty("unit", stdDevValueLabel->text().split(' ').last());
+    stdDevValueLabel->setTextFormat(Qt::RichText);
+    stdDevValueLabel->setWordWrap(true);
     coldStartGrid->addWidget(stdDevLabel, 1, 0);
     coldStartGrid->addWidget(stdDevValueLabel, 1, 1);
 
@@ -1542,6 +1723,11 @@ QWidget* CPUResultRenderer::createCPUResultWidget(
     QLabel* jitterValueLabel =
       new QLabel(QString("%1 μs").arg(jitter, 0, 'f', 1));
     jitterValueLabel->setStyleSheet("color: #FFFFFF; font-weight: bold;");
+    jitterValueLabel->setObjectName("cold_start_jitter_value");
+    jitterValueLabel->setProperty("userValue", jitter);
+    jitterValueLabel->setProperty("unit", jitterValueLabel->text().split(' ').last());
+    jitterValueLabel->setTextFormat(Qt::RichText);
+    jitterValueLabel->setWordWrap(true);
     coldStartGrid->addWidget(jitterLabel, 1, 2);
     coldStartGrid->addWidget(jitterValueLabel, 1, 3);
 
@@ -1934,44 +2120,183 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
 
   // Calculate the global max latency for consistent scaling BEFORE creating the
   // dropdown
-  const int selectedSizes[] = {32,   64,   128,   256,   512,  1024,
-                               4096, 8192, 16384, 32768, 65536};
-  const int numSizes = sizeof(selectedSizes) / sizeof(selectedSizes[0]);
-  double globalMaxLatency = 0;
+  const std::vector<int> selectedSizes = {32,   64,   128,   256,   512,  1024,
+                                          4096, 8192, 16384, 32768, 65536};
+  const int numSizes = static_cast<int>(selectedSizes.size());
+  double userMaxLatency = 0;
 
   // Find max latency in user's data
   for (int i = 0; i < numSizes; i++) {
     int sizeKB = selectedSizes[i];
     if (cacheLatencies.contains(sizeKB)) {
-      globalMaxLatency = std::max(globalMaxLatency, cacheLatencies[sizeKB]);
+      userMaxLatency = std::max(userMaxLatency, cacheLatencies[sizeKB]);
     }
   }
 
-  // Also check comparison CPUs but ONLY for the specific sizes we display
-  for (const auto& cpuEntry : comparisonData) {
-    const CPUComparisonData& cpuCompData = cpuEntry.second;
-    for (int i = 0; i < numSizes; i++) {
-      int sizeKB = selectedSizes[i];
-      if (cpuCompData.cacheLatencies.contains(sizeKB)) {
-        double latency = cpuCompData.cacheLatencies[sizeKB];
-        if (latency > 0) {
-          globalMaxLatency = std::max(globalMaxLatency, latency);
-        }
-      }
-    }
-  }
-
-  // Apply a small margin to avoid bars touching the edge
-  // Pre-adjust finalScalingFactor to account for the 1.25 scaling in
-  // createComparisonPerformanceBar
-  double finalScalingFactor = globalMaxLatency * 1.1 / 1.25;
+  // Use user max for initial scale; comparisons rescale on selection change.
+  double finalScalingFactor = userMaxLatency;
 
   // Generate aggregated data from individual results
   auto aggregatedData = generateAggregatedCPUData(finalComparisonData);
 
+  auto updateCacheUserBarLayout = [](QWidget* parentContainer,
+                                     int percentage) {
+    QWidget* userBarContainer =
+      parentContainer->findChild<QWidget*>("userBarContainer");
+    if (!userBarContainer) {
+      return;
+    }
+
+    QHBoxLayout* userBarLayout =
+      userBarContainer->findChild<QHBoxLayout*>("user_bar_layout");
+    if (!userBarLayout) {
+      return;
+    }
+
+    QWidget* userBar = userBarContainer->findChild<QWidget*>("user_bar_fill");
+    QWidget* userSpacer =
+      userBarContainer->findChild<QWidget*>("user_bar_spacer");
+    if (!userBar || !userSpacer) {
+      return;
+    }
+
+    const int barIndex = userBarLayout->indexOf(userBar);
+    const int spacerIndex = userBarLayout->indexOf(userSpacer);
+    if (barIndex >= 0) {
+      userBarLayout->setStretch(barIndex, percentage);
+    }
+    if (spacerIndex >= 0) {
+      userBarLayout->setStretch(spacerIndex, 100 - percentage);
+    }
+  };
+
+  auto updateCacheBars =
+    [containerWidget, cacheLatencies, selectedSizes, numSizes,
+     updateCacheUserBarLayout](const CPUComparisonData* compData,
+                               const QString& displayName,
+                               bool hasSelection) {
+      double maxLatency = 0.0;
+      for (int i = 0; i < numSizes; i++) {
+        const int sizeKB = selectedSizes[i];
+        if (cacheLatencies.contains(sizeKB)) {
+          maxLatency = std::max(maxLatency, cacheLatencies[sizeKB]);
+        }
+        if (compData && compData->cacheLatencies.contains(sizeKB)) {
+          maxLatency =
+            std::max(maxLatency, compData->cacheLatencies[sizeKB]);
+        }
+      }
+
+      const double scaledMax = maxLatency > 0 ? maxLatency * 1.25 : 0.0;
+
+      QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
+        QRegularExpression("^comparison_bar_cache.*"));
+      for (QWidget* bar : allBars) {
+        QWidget* parentContainer = bar->parentWidget();
+        if (!parentContainer) {
+          continue;
+        }
+
+        QLabel* nameLabel =
+          parentContainer->findChild<QLabel*>("comp_name_label");
+        if (nameLabel) {
+          if (hasSelection) {
+            nameLabel->setText(displayName);
+            nameLabel->setStyleSheet(
+              "color: #ffffff; background: transparent;");
+          } else {
+            nameLabel->setText("Select CPU to compare");
+            nameLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          }
+        }
+
+        QString objName = bar->objectName();
+        QRegularExpression sizeRegex("cache_(\\d+_[km]b)");
+        QRegularExpressionMatch sizeMatch = sizeRegex.match(objName);
+
+        if (!sizeMatch.hasMatch()) {
+          continue;
+        }
+
+        QString sizeStr = sizeMatch.captured(1);
+        int sizeKB = 0;
+        if (sizeStr.endsWith("_kb")) {
+          sizeKB = sizeStr.split("_").first().toInt();
+        } else if (sizeStr.endsWith("_mb")) {
+          sizeKB = sizeStr.split("_").first().toInt() * 1024;
+        }
+
+        const double userLatency =
+          cacheLatencies.contains(sizeKB) ? cacheLatencies[sizeKB] : 0.0;
+        const double compLatency =
+          (compData && compData->cacheLatencies.contains(sizeKB))
+            ? compData->cacheLatencies[sizeKB]
+            : 0.0;
+
+        const int userPercentage =
+          (userLatency > 0 && scaledMax > 0)
+            ? static_cast<int>(
+                std::min(100.0, (userLatency / scaledMax) * 100.0))
+            : 0;
+        updateCacheUserBarLayout(parentContainer, userPercentage);
+
+        QLabel* valueLabel = parentContainer->findChild<QLabel*>("value_label");
+        QLayout* layout = bar->layout();
+        if (layout) {
+          QLayoutItem* child;
+          while ((child = layout->takeAt(0)) != nullptr) {
+            delete child->widget();
+            delete child;
+          }
+
+          if (!hasSelection || compLatency <= 0) {
+            QWidget* emptyBar = new QWidget();
+            emptyBar->setStyleSheet("background-color: transparent;");
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(emptyBar);
+            }
+          } else {
+            const int compPercentage =
+              (scaledMax > 0)
+                ? static_cast<int>(std::min(
+                    100.0, (compLatency / scaledMax) * 100.0))
+                : 0;
+
+            QWidget* barWidget = new QWidget();
+            barWidget->setFixedHeight(16);
+            barWidget->setStyleSheet(
+              "background-color: #FF4444; border-radius: 2px;");
+
+            QWidget* spacer = new QWidget();
+            spacer->setStyleSheet("background-color: transparent;");
+
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(barWidget, compPercentage);
+              newLayout->addWidget(spacer, 100 - compPercentage);
+            }
+          }
+        }
+
+        if (valueLabel) {
+          if (!hasSelection || compLatency <= 0) {
+            valueLabel->setText("-");
+            valueLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          } else {
+            valueLabel->setText(QString("%1 ns").arg(compLatency, 0, 'f', 2));
+            valueLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+        }
+      }
+    };
+
   // Create a callback function to handle selection changes
   auto selectionCallback = [containerWidget, cacheLatencies,
-                            finalScalingFactor, downloadClient](
+                            downloadClient, updateCacheBars](
                              const QString& componentName,
                              const QString& originalFullName,
                              DiagnosticViewComponents::AggregationType type,
@@ -1997,7 +2322,7 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
       LOG_INFO << "CPUResultRenderer (Cache): Fetching network data for CPU: " << componentName.toStdString() << " using original name: " << originalFullName.toStdString();
       
       downloadClient->fetchComponentData("cpu", originalFullName, 
-        [containerWidget, cacheLatencies, finalScalingFactor, componentName, type]
+        [containerWidget, cacheLatencies, componentName, type, updateCacheBars]
         (bool success, const ComponentData& networkData, const QString& error) {
           
           if (success) {
@@ -2023,80 +2348,9 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
                   (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
             
             LOG_INFO << "CPUResultRenderer (Cache): Updating cache comparison bars with fetched data";
-            
-            // Update cache latency bars
-            QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-              QRegularExpression("^comparison_bar_cache.*"));
-            for (QWidget* bar : allBars) {
-              QLabel* nameLabel = bar->parentWidget()->findChild<QLabel*>("comp_name_label");
-              if (nameLabel) {
-                nameLabel->setText(displayName);
-                nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-              }
 
-              // Extract the size from object name (comparison_bar_cache_XX_kb/mb)
-              QString objName = bar->objectName();
-              QRegularExpression sizeRegex("cache_(\\d+_[km]b)");
-              QRegularExpressionMatch sizeMatch = sizeRegex.match(objName);
+            updateCacheBars(&fetchedCpuData, displayName, true);
 
-              if (sizeMatch.hasMatch()) {
-                QString sizeStr = sizeMatch.captured(1);
-                int sizeKB = 0;
-
-                if (sizeStr.endsWith("_kb")) {
-                  sizeKB = sizeStr.split("_").first().toInt();
-                } else if (sizeStr.endsWith("_mb")) {
-                  sizeKB = sizeStr.split("_").first().toInt() * 1024;
-                }
-
-                // Find the corresponding latency in the fetched CPU data
-                double compLatency = 0;
-                if (fetchedCpuData.cacheLatencies.contains(sizeKB)) {
-                  compLatency = fetchedCpuData.cacheLatencies[sizeKB];
-                }
-
-                if (compLatency > 0) {
-                  LOG_INFO << "CPUResultRenderer (Cache): Updating cache bar for " << sizeKB << "KB with latency " << compLatency;
-                  
-                  QLabel* valueLabel = bar->parentWidget()->findChild<QLabel*>("value_label");
-                  if (valueLabel) {
-                    valueLabel->setText(QString("%1 ns").arg(compLatency, 0, 'f', 2));
-                    valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
-                  }
-
-                  // Update the bar visual
-                  QLayout* layout = bar->layout();
-                  if (layout) {
-                    // Remove existing items
-                    QLayoutItem* child;
-                    while ((child = layout->takeAt(0)) != nullptr) {
-                      delete child->widget();
-                      delete child;
-                    }
-
-                    // Calculate percentage for bar scaling
-                    double scaledMaxLatency = finalScalingFactor * 1.25;
-                    int percentage = compLatency <= 0 ? 0 : 
-                      static_cast<int>(std::min(100.0, (compLatency / scaledMaxLatency) * 100.0));
-
-                    // Create comparison bar
-                    QWidget* barWidget = new QWidget();
-                    barWidget->setFixedHeight(16);
-                    barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
-
-                    QWidget* spacer = new QWidget();
-                    spacer->setStyleSheet("background-color: transparent;");
-
-                    QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-                    if (newLayout) {
-                      newLayout->addWidget(barWidget, percentage);
-                      newLayout->addWidget(spacer, 100 - percentage);
-                    }
-                  }
-                }
-              }
-            }
-            
           } else {
             LOG_ERROR << "CPUResultRenderer (Cache): Failed to fetch CPU data for " << componentName.toStdString() 
                       << ": " << error.toStdString();
@@ -2107,145 +2361,18 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
       return; // Exit early - the network callback will handle the UI update
     }
     
-    // If we reach here, we have cached data and no network fetch is needed
-    if (!componentName.isEmpty() && cpuData.singleCoreTime > 0) {
-      LOG_INFO << "CPUResultRenderer (Cache): Using cached CPU data for " << componentName.toStdString();
-      LOG_INFO << "CPUResultRenderer (Cache): Cached data - singleCoreTime: " << cpuData.singleCoreTime 
-               << ", cache latencies count: " << cpuData.cacheLatencies.size();
-      
-      // Log the cached cache latencies
-      for (const auto& entry : cpuData.cacheLatencies.toStdMap()) {
-        LOG_INFO << "CPUResultRenderer (Cache): Cached cache latency " << entry.first << " KB = " << entry.second << " ns";
-      }
-    }
-    
-    // Reset comparison data if empty selection
-    if (componentName.isEmpty()) {
-      QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-        QRegularExpression("^comparison_bar_cache.*"));
-      for (QWidget* bar : allBars) {
-        QLabel* valueLabel = bar->findChild<QLabel*>("value_label");
-        QLabel* nameLabel =
-          bar->parentWidget()->findChild<QLabel*>("comp_name_label");
+    const bool hasSelection = !componentName.isEmpty();
+    const QString displayName =
+      hasSelection
+        ? (componentName == DownloadApiClient::generalAverageLabel()
+             ? componentName
+             : componentName + " (" +
+                 (type == DiagnosticViewComponents::AggregationType::Best
+                    ? "Best)"
+                    : "Avg)"))
+        : QString("Select CPU to compare");
 
-        if (valueLabel) {
-          valueLabel->setText("-");
-          valueLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        if (nameLabel) {
-          nameLabel->setText("Select CPU to compare");
-          nameLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        QLayout* layout = bar->layout();
-        if (layout) {
-          // Clear existing layout
-          QLayoutItem* child;
-          while ((child = layout->takeAt(0)) != nullptr) {
-            delete child->widget();
-            delete child;
-          }
-
-          // Add empty placeholder
-          QWidget* emptyBar = new QWidget();
-          emptyBar->setStyleSheet("background-color: transparent;");
-
-          QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-          if (newLayout) {
-            newLayout->addWidget(emptyBar);
-          }
-        }
-      }
-      return;
-    }
-
-    // Create display name with aggregation type
-    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-      ? componentName
-      : componentName + " (" +
-          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-
-    // Update cache latency bars
-    QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-      QRegularExpression("^comparison_bar_cache.*"));
-    for (QWidget* bar : allBars) {
-      QLabel* nameLabel =
-        bar->parentWidget()->findChild<QLabel*>("comp_name_label");
-      if (nameLabel) {
-        nameLabel->setText(displayName);
-        nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-      }
-
-      // Extract the size from object name (comparison_bar_cache_XX_kb)
-      QString objName = bar->objectName();
-      QRegularExpression sizeRegex("cache_(\\d+_[km]b)");
-      QRegularExpressionMatch match = sizeRegex.match(objName);
-
-      if (match.hasMatch()) {
-        QString sizeStr = match.captured(1).replace("_", " ").toUpper();
-        int sizeKB = 0;
-
-        // Convert size string to KB value
-        if (sizeStr.contains("KB")) {
-          sizeKB = sizeStr.split(" ").first().toInt();
-        } else if (sizeStr.contains("MB")) {
-          sizeKB = sizeStr.split(" ").first().toInt() * 1024;
-        }
-
-        // Check if we have data for this size
-        if (sizeKB > 0 && cpuData.cacheLatencies.contains(sizeKB)) {
-          double latency = cpuData.cacheLatencies[sizeKB];
-
-          // Find and update the value label
-          QLabel* valueLabel =
-            bar->parentWidget()->findChild<QLabel*>("value_label");
-          if (valueLabel) {
-            valueLabel->setText(QString("%1 ns").arg(latency, 0, 'f', 1));
-            valueLabel->setStyleSheet(
-              "color: #FF4444; background: transparent;");
-          }
-
-          // Update the bar
-          QLayout* layout = bar->layout();
-          if (layout) {
-            // Remove existing items
-            QLayoutItem* child;
-            while ((child = layout->takeAt(0)) != nullptr) {
-              delete child->widget();
-              delete child;
-            }
-
-            // Use finalScalingFactor directly for consistent scaling
-            double scaledMaxValue = finalScalingFactor * 1.25;
-            int percentage = latency <= 0
-                               ? 0
-                               : static_cast<int>(std::min(
-                                   100.0, (latency / scaledMaxValue) * 100.0));
-
-            LOG_INFO << "Latency bar " << sizeKB << " KB: " << latency << " ns - "
-                     << percentage << "%";
-
-            // Create bar and spacer
-            QWidget* barWidget = new QWidget();
-            barWidget->setFixedHeight(16);
-            barWidget->setStyleSheet(
-              "background-color: #FF4444; border-radius: 2px;");
-
-            QWidget* spacer = new QWidget();
-            spacer->setStyleSheet("background-color: transparent;");
-
-            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-            if (newLayout) {
-              newLayout->addWidget(barWidget, percentage);
-              newLayout->addWidget(spacer, 100 - percentage);
-            }
-          }
-        }
-      }
-    }
+    updateCacheBars(hasSelection ? &cpuData : nullptr, displayName, hasSelection);
   };
 
   // Use the template function to create the dropdown with aggregated data

@@ -31,9 +31,8 @@ SetupIconFile=..\cmake\windows\checkmark.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
-; Optional code signing (uncomment and configure when cert is available)
+; Optional code signing (configure when cert is available)
 ; SignTool=mysigntool $f
-; SignTool=...
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -42,13 +41,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
-; Explicitly include d3dcompiler_47.dll
-Source: "..\build\Release\d3dcompiler_47.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-
 ; Main executable
 Source: "..\build\Release\checkmark.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-; Qt and other DLLs from release folder (excluding results directories)
+; App binaries and runtime dependencies from release folder (excluding results directories)
 Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*,*.lib,*.exp,*.pdb,*.ipdb,*.iobj,*.ilk,*.obj,*.pch,*.tlog,*.log,*.lastbuildstate,*.idb,*.iss,*.xml.in,appcast.xml"
 
 ; License files (include only if present)
@@ -82,160 +78,9 @@ Name: "{group}\Third Party Licenses"; Filename: "{app}\THIRD_PARTY_LICENSES.txt"
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Visual C++ Redistributable..."; Flags: waituntilterminated; Check: FileExists(ExpandConstant('{tmp}\vc_redist.x64.exe'))
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
-[InstallDelete]
-; Removed destructive deletion to preserve app root contents and user data
-
 [Dirs]
 ; Ensure data folders persist across updates and are not uninstalled
 Name: "{app}\benchmark_results"; Flags: uninsneveruninstall
 Name: "{app}\diagnostic_results"; Flags: uninsneveruninstall
 Name: "{app}\profiles"; Flags: uninsneveruninstall
 Name: "{app}\debug logging"; Flags: uninsneveruninstall
-
-[Code]
-var
-  LogPage: TOutputMsgWizardPage;
-  RedistPath: String;
-
-// Create a log page to display dependency information
-procedure InitializeWizard;
-begin
-  LogPage := CreateOutputMsgPage(wpInstalling, 
-    'Dependency Check', 
-    'Checking for required dependencies',
-    'Checking system for required libraries:');
-end;
-
-// Check if Visual C++ Redistributable exists in any of the possible paths
-function RedistFound: Boolean;
-var
-  PossiblePaths: array of String;
-  I: Integer;
-  LogMsg: String;
-begin
-  SetArrayLength(PossiblePaths, 9);
-  PossiblePaths[0] := ExpandConstant('{tmp}\vc_redist.x64.exe');
-  PossiblePaths[1] := 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\v143\vc_redist.x64.exe';
-  PossiblePaths[2] := 'C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\v143\vc_redist.x64.exe';
-  PossiblePaths[3] := 'C:\Program Files (x86)\Microsoft Visual Studio\2022\Professional\VC\Redist\MSVC\v143\vc_redist.x64.exe';
-  PossiblePaths[4] := 'C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\v143\vc_redist.x64.exe';
-  PossiblePaths[5] := 'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Redist\MSVC\v142\vc_redist.x64.exe';
-  PossiblePaths[6] := 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Redist\MSVC\v142\vc_redist.x64.exe';
-  PossiblePaths[7] := 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Redist\MSVC\v142\vc_redist.x64.exe';
-  PossiblePaths[8] := 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\v142\vc_redist.x64.exe';
-  
-  LogMsg := 'Searching for Visual C++ Redistributable...' + #13#10;
-  
-  Result := False;
-  RedistPath := '';
-  
-  for I := 0 to GetArrayLength(PossiblePaths) - 1 do
-  begin
-    LogMsg := LogMsg + 'Checking: ' + PossiblePaths[I] + '... ';
-    
-    if FileExists(PossiblePaths[I]) then
-    begin
-      LogMsg := LogMsg + 'FOUND!' + #13#10;
-      RedistPath := PossiblePaths[I];
-      Result := True;
-      break;
-    end
-    else
-    begin
-      LogMsg := LogMsg + 'not found' + #13#10;
-    end;
-  end;
-  
-  if Result then
-    LogMsg := LogMsg + #13#10 + 'Visual C++ Redistributable found at: ' + RedistPath
-  else
-    LogMsg := LogMsg + #13#10 + 'WARNING: Visual C++ Redistributable not found! Installation may fail.';
-  
-  // Add log about bundled redist
-  if FileExists(ExpandConstant('{tmp}\vc_redist.x64.exe')) then
-    LogMsg := LogMsg + #13#10 + 'Bundled Visual C++ Redistributable found and will be used.'
-  else
-    LogMsg := LogMsg + #13#10 + 'Bundled Visual C++ Redistributable not found either!';
-  
-  // FIX: Use the Description property instead of Content
-  LogPage.Description := LogMsg;
-  
-  // We always return true since we'll try to install it
-  Result := True;
-end;
-
-// Log information about dependency installation
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  LogContent: String;
-  ReportFile: String;
-  ReportText: TStringList;
-begin
-  if CurStep = ssInstall then
-  begin
-    LogContent := 'Starting dependency installation...' + #13#10 + #13#10;
-    
-    // Check for key DLLs in the release folder
-    if FileExists(ExpandConstant('{src}\..\build\Release\d3dcompiler_47.dll')) then
-      LogContent := LogContent + 'd3dcompiler_47.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: d3dcompiler_47.dll not found!' + #13#10;
-      
-    if FileExists(ExpandConstant('{src}\..\build\Release\Qt6Core.dll')) then
-      LogContent := LogContent + 'Qt6Core.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: Qt6Core.dll not found!' + #13#10;
-      
-    if FileExists(ExpandConstant('{src}\..\build\Release\Qt6Gui.dll')) then
-      LogContent := LogContent + 'Qt6Gui.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: Qt6Gui.dll not found!' + #13#10;
-      
-    if FileExists(ExpandConstant('{src}\..\build\Release\Qt6Widgets.dll')) then
-      LogContent := LogContent + 'Qt6Widgets.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: Qt6Widgets.dll not found!' + #13#10;
-      
-    if FileExists(ExpandConstant('{src}\..\build\Release\LibreHardwareMonitorLib.dll')) then
-      LogContent := LogContent + 'LibreHardwareMonitorLib.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: LibreHardwareMonitorLib.dll not found!' + #13#10;
-      
-    if FileExists(ExpandConstant('{src}\..\build\Release\LibreHardwareMonitorWrapper.dll')) then
-      LogContent := LogContent + 'LibreHardwareMonitorWrapper.dll: FOUND' + #13#10
-    else
-      LogContent := LogContent + 'WARNING: LibreHardwareMonitorWrapper.dll not found!' + #13#10;
-      
-    // FIX: Use Description property instead of Content
-    LogPage.Description := LogPage.Description + #13#10 + LogContent;
-  end;
-
-  // Add post-install check to verify VC++ redistributable installation
-  if CurStep = ssPostInstall then
-  begin
-    // Check if key VC++ redistributable files exist in system directory
-    if FileExists(ExpandConstant('{sys}\msvcp140.dll')) then
-      LogPage.Description := LogPage.Description + #13#10 + 'Visual C++ Redistributable appears to be properly installed.'
-    else
-      LogPage.Description := LogPage.Description + #13#10 + 'WARNING: Visual C++ Redistributable files not detected in system directory!';
-      
-    // Create an installation report for troubleshooting
-    ReportFile := ExpandConstant('{app}\install_report.txt');
-    
-    try
-      ReportText := TStringList.Create;
-      try
-        ReportText.Text := 'Checkmark Installation Report' + #13#10 +
-                          '==============================================' + #13#10 +
-                          'Date: ' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + #13#10#13#10 +
-                          'Dependencies Check:' + #13#10 + 
-                          LogPage.Description;
-        ReportText.SaveToFile(ReportFile);
-      finally
-        ReportText.Free;
-      end;
-    except
-      // Silent exception handling if file writing fails
-    end;
-  end;
-end;

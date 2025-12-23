@@ -586,11 +586,20 @@ void collectOsInfo() {
   HKEY hKey;
   DWORD gameMode = 0;
   DWORD dataSize = sizeof(DWORD);
+  bool valueRead = false;
 
   if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\GameBar", 0,
                     KEY_READ, &hKey) == ERROR_SUCCESS) {
-    if (RegQueryValueExW(hKey, L"AutoGameMode", 0, NULL, (LPBYTE)&gameMode,
+    if (RegQueryValueExW(hKey, L"AutoGameModeEnabled", 0, NULL,
+                         (LPBYTE)&gameMode,
                          &dataSize) == ERROR_SUCCESS) {
+      valueRead = true;
+    } else if (RegQueryValueExW(hKey, L"AutoGameMode", 0, NULL,
+                                (LPBYTE)&gameMode,
+                                &dataSize) == ERROR_SUCCESS) {
+      valueRead = true;
+    }
+    if (valueRead) {
       g_constantSystemInfo.gameMode = (gameMode == 1);
     }
     RegCloseKey(hKey);
@@ -1142,6 +1151,7 @@ void collectAllSystemInfo() {
   timeOperation("Motherboard info", collectMotherboardInfo);
   timeOperation("BIOS info", collectBiosInfo);
   timeOperation("OS info", collectOsInfo);
+  timeOperation("Power info", collectPowerInfo);
   timeOperation("Drive info", collectDriveInfo);
   timeOperation("Page file info", collectPageFileInfo);
   timeOperation("Driver info", collectDriverInfo);

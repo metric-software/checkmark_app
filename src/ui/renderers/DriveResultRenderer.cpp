@@ -648,21 +648,256 @@ QComboBox* DriveResultRenderer::createDriveComparisonDropdown(
   // Generate aggregated data from individual results
   auto aggregatedData = generateAggregatedDriveData(comparisonData);
 
+  const QPair<double, double> readSpeedValsCopy = readSpeedVals;
+  const QPair<double, double> writeSpeedValsCopy = writeSpeedVals;
+  const QPair<double, double> iopsValsCopy = iopsVals;
+  const QPair<double, double> accessTimeValsCopy = accessTimeVals;
+
+  struct TestMetric {
+    QString objectName;
+    double userValue;
+    double compValue;
+    QString unit;
+    bool lowerIsBetter;
+  };
+
+  auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
+    QWidget* userBarContainer =
+      parentContainer->findChild<QWidget*>("userBarContainer");
+    if (!userBarContainer) {
+      return;
+    }
+
+    QHBoxLayout* userBarLayout =
+      userBarContainer->findChild<QHBoxLayout*>("user_bar_layout");
+    if (!userBarLayout) {
+      return;
+    }
+
+    QWidget* userBar = userBarContainer->findChild<QWidget*>("user_bar_fill");
+    QWidget* userSpacer =
+      userBarContainer->findChild<QWidget*>("user_bar_spacer");
+    if (!userBar || !userSpacer) {
+      return;
+    }
+
+    const int barIndex = userBarLayout->indexOf(userBar);
+    const int spacerIndex = userBarLayout->indexOf(userSpacer);
+    if (barIndex >= 0) {
+      userBarLayout->setStretch(barIndex, percentage);
+    }
+    if (spacerIndex >= 0) {
+      userBarLayout->setStretch(spacerIndex, 100 - percentage);
+    }
+  };
+
+  auto makeDisplayName = [](const QString& componentName,
+                            DiagnosticViewComponents::AggregationType type,
+                            const QString& driveType, bool hasSelection) {
+    if (!hasSelection) {
+      return QString("Select drive to compare");
+    }
+
+    QString name = (componentName == DownloadApiClient::generalAverageLabel())
+                     ? componentName
+                     : componentName + " (" +
+                         (type == DiagnosticViewComponents::AggregationType::Best
+                            ? "Best)"
+                            : "Avg)");
+
+    if (!driveType.isEmpty() && driveType != "Unknown") {
+      name += " (" + driveType + ")";
+    }
+
+    return name;
+  };
+
+  auto updateDriveBars =
+    [containerWidget, readSpeedValsCopy, writeSpeedValsCopy, iopsValsCopy,
+     accessTimeValsCopy, updateUserBarLayout](
+      const DriveComparisonData* compData, const QString& displayName,
+      bool hasSelection) {
+      std::vector<TestMetric> tests = {
+        {"comparison_bar_read", readSpeedValsCopy.first,
+         compData ? compData->readSpeedMBs : 0.0, "MB/s", false},
+        {"comparison_bar_write", writeSpeedValsCopy.first,
+         compData ? compData->writeSpeedMBs : 0.0, "MB/s", false},
+        {"comparison_bar_iops", iopsValsCopy.first,
+         compData ? compData->iops4k : 0.0, "IOPS", false},
+        {"comparison_bar_access", accessTimeValsCopy.first,
+         compData ? compData->accessTimeMs : 0.0, "ms", true}};
+
+      QHash<QString, TestMetric> testMap;
+      for (const auto& test : tests) {
+        testMap.insert(test.objectName, test);
+      }
+
+      QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
+        QRegularExpression("^comparison_bar_"));
+
+      for (QWidget* bar : allBars) {
+        auto it = testMap.find(bar->objectName());
+        if (it == testMap.end()) {
+          continue;
+        }
+
+        const TestMetric test = it.value();
+        const double maxValue =
+          std::max(test.userValue, test.compValue);
+        const double scaledMax = maxValue > 0 ? maxValue * 1.25 : 0.0;
+        const int userPercentage =
+          (test.userValue > 0 && scaledMax > 0)
+            ? static_cast<int>(
+                std::min(100.0, (test.userValue / scaledMax) * 100.0))
+            : 0;
+
+        QWidget* parentContainer = bar->parentWidget();
+        if (!parentContainer) {
+          continue;
+        }
+
+        QLabel* nameLabel =
+          parentContainer->findChild<QLabel*>("comp_name_label");
+        if (nameLabel) {
+          nameLabel->setText(displayName);
+          nameLabel->setStyleSheet(
+            hasSelection
+              ? "color: #ffffff; background: transparent;"
+              : "color: #888888; font-style: italic; background: transparent;");
+        }
+
+        updateUserBarLayout(parentContainer, userPercentage);
+
+        QLabel* valueLabel = parentContainer->findChild<QLabel*>("value_label");
+        QLayout* layout = bar->layout();
+        if (layout) {
+          QLayoutItem* child;
+          while ((child = layout->takeAt(0)) != nullptr) {
+            delete child->widget();
+            delete child;
+          }
+
+          if (!hasSelection || test.compValue <= 0) {
+            QWidget* emptyBar = new QWidget();
+            emptyBar->setStyleSheet("background-color: transparent;");
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(emptyBar);
+            }
+          } else {
+            const int compPercentage =
+              (scaledMax > 0)
+                ? static_cast<int>(std::min(
+                    100.0, (test.compValue / scaledMax) * 100.0))
+                : 0;
+
+            QWidget* barWidget = new QWidget();
+            barWidget->setFixedHeight(16);
+            barWidget->setStyleSheet(
+              "background-color: #FF4444; border-radius: 2px;");
+
+            QWidget* spacer = new QWidget();
+            spacer->setStyleSheet("background-color: transparent;");
+
+            QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
+            if (newLayout) {
+              newLayout->addWidget(barWidget, compPercentage);
+              newLayout->addWidget(spacer, 100 - compPercentage);
+            }
+          }
+        }
+
+        if (valueLabel) {
+          if (!hasSelection || test.compValue <= 0) {
+            valueLabel->setText("-");
+            valueLabel->setStyleSheet(
+              "color: #888888; font-style: italic; background: transparent;");
+          } else {
+            const int decimals =
+              test.objectName == "comparison_bar_access" ? 4 : 1;
+            valueLabel->setText(
+              QString("%1 %2").arg(test.compValue, 0, 'f', decimals).arg(test.unit));
+            valueLabel->setStyleSheet(
+              "color: #FF4444; background: transparent;");
+          }
+        }
+
+        QWidget* userBarContainer =
+          parentContainer->findChild<QWidget*>("userBarContainer");
+        QWidget* userBarFill = userBarContainer
+                                 ? userBarContainer->findChild<QWidget*>(
+                                     "user_bar_fill")
+                                 : nullptr;
+        if (!userBarFill) {
+          continue;
+        }
+
+        QLabel* existingLabel =
+          userBarFill->findChild<QLabel*>("percentageLabel");
+        if (existingLabel) {
+          delete existingLabel;
+        }
+
+        if (hasSelection && test.compValue > 0 && test.userValue > 0) {
+          double percentChange = 0;
+          if (test.lowerIsBetter) {
+            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+          } else {
+            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
+          }
+
+          QString percentText;
+          QString percentColor;
+
+          const bool isBetter =
+            (test.lowerIsBetter && percentChange < 0) ||
+            (!test.lowerIsBetter && percentChange > 0);
+          const bool isApproxEqual = qAbs(percentChange) < 1.0;
+
+          if (isApproxEqual) {
+            percentText = "≈";
+            percentColor = "#FFAA00";
+          } else {
+            percentText =
+              QString("%1%2%")
+                .arg(isBetter ? "+" : "")
+                .arg(percentChange, 0, 'f', 1);
+            percentColor = isBetter ? "#44FF44" : "#FF4444";
+          }
+
+          QHBoxLayout* overlayLayout =
+            userBarFill->findChild<QHBoxLayout*>("overlayLayout");
+          if (!overlayLayout) {
+            overlayLayout = new QHBoxLayout(userBarFill);
+            overlayLayout->setObjectName("overlayLayout");
+            overlayLayout->setContentsMargins(0, 0, 0, 0);
+          }
+
+          QLabel* percentageLabel = new QLabel(percentText);
+          percentageLabel->setObjectName("percentageLabel");
+          percentageLabel->setStyleSheet(
+            QString(
+              "color: %1; background: transparent; font-weight: bold;")
+              .arg(percentColor));
+          percentageLabel->setAlignment(Qt::AlignCenter);
+          overlayLayout->addWidget(percentageLabel);
+        }
+      }
+    };
+
   // Create a callback function to handle selection changes
-  auto selectionCallback = [containerWidget, readSpeedVals, writeSpeedVals,
-                            iopsVals, accessTimeVals, downloadClient](
+  auto selectionCallback = [downloadClient, makeDisplayName, updateDriveBars](
                              const QString& componentName,
                              const QString& originalFullName,
                              DiagnosticViewComponents::AggregationType type,
                              const DriveComparisonData& driveData) {
-    
     // If downloadClient is available and driveData has no performance data (only name), 
     // fetch the actual data from the server
     if (downloadClient && !componentName.isEmpty() && driveData.readSpeedMBs <= 0) {
       LOG_INFO << "DriveResultRenderer: Fetching network data for Drive: " << componentName.toStdString() << " using original name: " << originalFullName.toStdString();
       
       downloadClient->fetchComponentData("drive", originalFullName, 
-        [containerWidget, readSpeedVals, writeSpeedVals, iopsVals, accessTimeVals, componentName, type]
+        [componentName, type, makeDisplayName, updateDriveBars]
         (bool success, const ComponentData& networkData, const QString& error) {
           
           if (success) {
@@ -671,99 +906,9 @@ QComboBox* DriveResultRenderer::createDriveComparisonDropdown(
             // Convert network data to DriveComparisonData
             DriveComparisonData fetchedDriveData = convertNetworkDataToDrive(networkData);
             
-            // Find all comparison bars
-            QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-              QRegularExpression("^comparison_bar_"));
-            
-            // Create display name
-            QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-              ? componentName
-              : componentName + " (" +
-                  (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-            
-            LOG_INFO << "DriveResultRenderer: Updating comparison bars with fetched data";
-            
-            // Build test data with the fetched values
-            struct TestData {
-              QString objectName;
-              double value;
-              QString unit;
-            };
-            
-            std::vector<TestData> tests = {
-              {"comparison_bar_read", fetchedDriveData.readSpeedMBs, "MB/s"},
-              {"comparison_bar_write", fetchedDriveData.writeSpeedMBs, "MB/s"},
-              {"comparison_bar_iops", fetchedDriveData.iops4k, "IOPS"},
-              {"comparison_bar_access", fetchedDriveData.accessTimeMs, "ms"}
-            };
-            
-            // Update each comparison bar with fetched data
-            for (QWidget* bar : allBars) {
-              QWidget* parentContainer = bar->parentWidget();
-              if (parentContainer) {
-                QLabel* nameLabel = parentContainer->findChild<QLabel*>("comp_name_label");
-                if (nameLabel) {
-                  nameLabel->setText(displayName);
-                  nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-                }
-                
-                // Update the value label and bar based on bar type
-                for (const auto& test : tests) {
-                  if (bar->objectName() == test.objectName && test.value > 0) {
-                    LOG_INFO << "DriveResultRenderer: Updating bar " << test.objectName.toStdString() 
-                             << " with value " << test.value;
-                    
-                    QLabel* valueLabel = bar->parentWidget()->findChild<QLabel*>("value_label");
-                    if (valueLabel) {
-                      valueLabel->setText(QString("%1 %2").arg(test.value, 0, 'f', 1).arg(test.unit));
-                      valueLabel->setStyleSheet("color: #FF4444; background: transparent;");
-                    }
-                    
-                    // Also update the bar visual (simplified approach) 
-                    QLayout* layout = bar->layout();
-                    if (layout) {
-                      // Remove existing items
-                      QLayoutItem* child;
-                      while ((child = layout->takeAt(0)) != nullptr) {
-                        delete child->widget();
-                        delete child;
-                      }
-                      
-                      // Calculate percentage based on appropriate max value
-                      double maxValue = 1.0;
-                      if (test.objectName == "comparison_bar_read") {
-                        maxValue = readSpeedVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_write") {
-                        maxValue = writeSpeedVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_iops") {
-                        maxValue = iopsVals.second * 1.25;
-                      } else if (test.objectName == "comparison_bar_access") {
-                        maxValue = accessTimeVals.second * 1.25;
-                      }
-                      
-                      int percentage = test.value <= 0 ? 0 : 
-                        static_cast<int>(std::min(100.0, (test.value / maxValue) * 100.0));
-                      
-                      // Create a comparison bar
-                      QWidget* barWidget = new QWidget();
-                      barWidget->setFixedHeight(16);
-                      barWidget->setStyleSheet("background-color: #FF4444; border-radius: 2px;");
-                      
-                      QWidget* spacer = new QWidget();
-                      spacer->setStyleSheet("background-color: transparent;");
-                      
-                      QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-                      if (newLayout) {
-                        newLayout->addWidget(barWidget, percentage);
-                        newLayout->addWidget(spacer, 100 - percentage);
-                      }
-                    }
-                    break;
-                  }
-                }
-              }
-            }
-            
+            const QString displayName = makeDisplayName(
+              componentName, type, fetchedDriveData.driveType, true);
+            updateDriveBars(&fetchedDriveData, displayName, true);
           } else {
             LOG_ERROR << "DriveResultRenderer: Failed to fetch Drive data for " << componentName.toStdString() 
                       << ": " << error.toStdString();
@@ -773,235 +918,14 @@ QComboBox* DriveResultRenderer::createDriveComparisonDropdown(
       
       return; // Exit early - the network callback will handle the UI update
     }
-    // Find all comparison bars
-    QList<QWidget*> allBars = containerWidget->findChildren<QWidget*>(
-      QRegularExpression("^comparison_bar_"));
 
-    if (componentName.isEmpty()) {
-      // Reset all bars if user selects the placeholder option
-      for (QWidget* bar : allBars) {
-        QLabel* valueLabel = bar->findChild<QLabel*>("value_label");
-        QLabel* nameLabel =
-          bar->parentWidget()->findChild<QLabel*>("comp_name_label");
+    const bool hasSelection = !componentName.isEmpty();
+    const QString displayName = makeDisplayName(
+      componentName, type, hasSelection ? driveData.driveType : QString(),
+      hasSelection);
 
-        if (valueLabel) {
-          valueLabel->setText("-");
-          valueLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        if (nameLabel) {
-          nameLabel->setText("Select drive to compare");
-          nameLabel->setStyleSheet(
-            "color: #888888; font-style: italic; background: transparent;");
-        }
-
-        QLayout* layout = bar->layout();
-        if (layout) {
-          // Clear existing layout
-          QLayoutItem* child;
-          while ((child = layout->takeAt(0)) != nullptr) {
-            delete child->widget();
-            delete child;
-          }
-
-          // Add empty placeholder
-          QWidget* emptyBar = new QWidget();
-          emptyBar->setStyleSheet("background-color: transparent;");
-
-          QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-          if (newLayout) {
-            newLayout->addWidget(emptyBar);
-          }
-        }
-      }
-      return;
-    }
-
-    // Structure to hold test data for updating bars
-    struct TestData {
-      QString objectName;
-      double value;
-      double maxValue;
-      QString unit;
-      bool lowerIsBetter;
-    };
-
-    // Create display name with aggregation type
-    QString displayName = (componentName == DownloadApiClient::generalAverageLabel())
-      ? componentName
-      : componentName + " (" +
-          (type == DiagnosticViewComponents::AggregationType::Best ? "Best)" : "Avg)");
-
-    // Add drive type if available
-    if (!driveData.driveType.isEmpty() && driveData.driveType != "Unknown") {
-      displayName += " (" + driveData.driveType + ")";
-    }
-
-    std::vector<TestData> tests = {
-      {"comparison_bar_read", driveData.readSpeedMBs, readSpeedVals.second,
-       "MB/s", false},
-      {"comparison_bar_write", driveData.writeSpeedMBs, writeSpeedVals.second,
-       "MB/s", false},
-      {"comparison_bar_iops", driveData.iops4k, iopsVals.second, "", false},
-      {"comparison_bar_access", driveData.accessTimeMs, accessTimeVals.second,
-       "ms", true}};
-
-    // Update all comparison bars
-    for (QWidget* bar : allBars) {
-      QWidget* parentContainer = bar->parentWidget();
-      if (parentContainer) {
-        QLabel* nameLabel =
-          parentContainer->findChild<QLabel*>("comp_name_label");
-        if (nameLabel) {
-          nameLabel->setText(displayName);
-          nameLabel->setStyleSheet("color: #ffffff; background: transparent;");
-        }
-
-        for (const auto& test : tests) {
-          if (bar->objectName() == test.objectName) {
-            // Find the value label and update it
-            QLabel* valueLabel =
-              bar->parentWidget()->findChild<QLabel*>("value_label");
-            if (valueLabel) {
-              // Use 4 decimal places for access time, 1 for others
-              QString displayValue =
-                QString("%1 %2")
-                  .arg(test.value, 0, 'f',
-                       test.objectName == "comparison_bar_access" ? 4 : 1)
-                  .arg(test.unit);
-              valueLabel->setText(displayValue);
-              valueLabel->setStyleSheet(
-                "color: #FF4444; background: transparent;");
-            }
-
-            // Update the bar width with scaled value
-            QLayout* layout = bar->layout();
-            if (layout) {
-              // Remove existing items
-              QLayoutItem* child;
-              while ((child = layout->takeAt(0)) != nullptr) {
-                delete child->widget();
-                delete child;
-              }
-
-              // Calculate scaled percentage (0-100%)
-              double scaledMaxValue =
-                test.maxValue *
-                1.25;  // Use same scaling as in createComparisonPerformanceBar
-              double percentage;
-
-              if (test.lowerIsBetter) {
-                // For access time (lower is better)
-                percentage = (test.value / scaledMaxValue) * 100.0;
-              } else {
-                // For bandwidth/IOPS (higher is better)
-                percentage = (test.value / scaledMaxValue) * 100.0;
-              }
-
-              percentage = std::min(percentage, 100.0);
-
-              // Create bar and spacer
-              QWidget* barWidget = new QWidget();
-              barWidget->setFixedHeight(16);
-              barWidget->setStyleSheet(
-                "background-color: #FF4444; border-radius: 2px;");
-
-              QWidget* spacer = new QWidget();
-              spacer->setStyleSheet("background-color: transparent;");
-
-              QHBoxLayout* newLayout = qobject_cast<QHBoxLayout*>(layout);
-              if (newLayout) {
-                newLayout->addWidget(barWidget, static_cast<int>(percentage));
-                newLayout->addWidget(spacer,
-                                     100 - static_cast<int>(percentage));
-              }
-            }
-
-            // Also update percentage difference with user's result
-            QWidget* userBar =
-              parentContainer->findChild<QWidget*>("userBarContainer");
-            if (userBar) {
-              // Find if there's an existing percentage label to remove
-              QLabel* existingLabel =
-                userBar->findChild<QLabel*>("percentageLabel");
-              if (existingLabel) {
-                delete existingLabel;
-              }
-
-              // Get the matching user value to calculate percentage
-              double userValue = 0;
-              if (test.objectName == "comparison_bar_read")
-                userValue = readSpeedVals.first;
-              else if (test.objectName == "comparison_bar_write")
-                userValue = writeSpeedVals.first;
-              else if (test.objectName == "comparison_bar_iops")
-                userValue = iopsVals.first;
-              else if (test.objectName == "comparison_bar_access")
-                userValue = accessTimeVals.first;
-
-              // Only add percentage if we have valid values
-              if (userValue > 0 && test.value > 0) {
-                // Calculate percentage difference
-                double percentChange = 0;
-                if (test.lowerIsBetter) {
-                  // For lower-is-better metrics, negative percent means user is
-                  // better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                } else {
-                  // For higher-is-better metrics, positive percent means user
-                  // is better
-                  percentChange = ((userValue / test.value) - 1.0) * 100.0;
-                }
-
-                QString percentText;
-                QString percentColor;
-
-                // Determine if user result is better or worse
-                bool isBetter = (test.lowerIsBetter && percentChange < 0) ||
-                                (!test.lowerIsBetter && percentChange > 0);
-                bool isApproxEqual = qAbs(percentChange) < 1.0;
-
-                if (isApproxEqual) {
-                  percentText = "≈";
-                  percentColor = "#FFAA00";  // Yellow for equal
-                } else {
-                  percentText =
-                    QString("%1%2%")
-                      .arg(isBetter ? "+"
-                                    : "")  // Add + prefix for better results
-                      .arg(percentChange, 0, 'f', 1);
-                  percentColor =
-                    isBetter ? "#44FF44"
-                             : "#FF4444";  // Green for better, red for worse
-                }
-
-                // Create an overlay layout if it doesn't exist
-                QHBoxLayout* overlayLayout =
-                  userBar->findChild<QHBoxLayout*>("overlayLayout");
-                if (!overlayLayout) {
-                  overlayLayout = new QHBoxLayout(userBar);
-                  overlayLayout->setObjectName("overlayLayout");
-                  overlayLayout->setContentsMargins(0, 0, 0, 0);
-                }
-
-                // Create and add percentage label
-                QLabel* percentageLabel = new QLabel(percentText);
-                percentageLabel->setObjectName("percentageLabel");
-                percentageLabel->setStyleSheet(
-                  QString(
-                    "color: %1; background: transparent; font-weight: bold;")
-                    .arg(percentColor));
-                percentageLabel->setAlignment(Qt::AlignCenter);
-                overlayLayout->addWidget(percentageLabel);
-              }
-            }
-
-            break;
-          }
-        }
-      }
-    }
+    updateDriveBars(hasSelection ? &driveData : nullptr, displayName,
+                    hasSelection);
   };
 
   // Use the shared helper to create the dropdown

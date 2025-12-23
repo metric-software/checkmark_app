@@ -35,6 +35,13 @@ struct CPUComparisonData {
   int l2CacheKB = 0;
   int l3CacheKB = 0;
 
+  // Boost summary (from diagnostics/general)
+  double boostAllCorePowerW = 0.0;
+  int boostBestCore = 0;
+  double boostIdlePowerW = 0.0;
+  double boostMaxDeltaMhz = 0.0;
+  double boostSingleCorePowerW = 0.0;
+
   // Performance metrics
   double singleCoreTime = 0.0;
   double fourThreadTime = 0.0;
@@ -50,6 +57,7 @@ struct CPUComparisonData {
   double coldStartMin = 0.0;
   double coldStartMax = 0.0;
   double coldStartStdDev = 0.0;
+  double coldStartJitter = 0.0;
 
   // Cache latencies
   QMap<int, double> cacheLatencies;
