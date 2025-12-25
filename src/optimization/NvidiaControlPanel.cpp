@@ -1,6 +1,5 @@
 #include "NvidiaControlPanel.h"
 
-#include <iostream>
 #include <memory>
 #include <string>
 
@@ -8,6 +7,7 @@
 
 #include "BackupManager.h"
 #include "NvidiaOptimization.h"
+#include "logging/Logger.h"
 
 // Include NVIDIA API headers
 #include "nvapi.h"
@@ -53,16 +53,15 @@ bool NvidiaControlPanel::Initialize() {
   if (initialized) return true;
 
   if (!has_nvidia_gpu) {
-    std::cout << "NvidiaControlPanel::Initialize - No NVIDIA GPU detected"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: Initialize failed - No NVIDIA GPU detected";
     return false;
   }
 
   // (0) Initialize NVAPI
   NvAPI_Status status = NvAPI_Initialize();
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::Initialize - Failed to initialize NVAPI: "
-              << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: Initialize failed - Failed to initialize NVAPI: "
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -70,9 +69,9 @@ bool NvidiaControlPanel::Initialize() {
   NvDRSSessionHandle hSession = nullptr;
   status = NvAPI_DRS_CreateSession(&hSession);
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::Initialize - Failed to create DRS session: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: Initialize failed - Failed to create DRS session: "
+      << GetNvAPIErrorString(status);
     NvAPI_Unload();
     return false;
   }
@@ -81,9 +80,9 @@ bool NvidiaControlPanel::Initialize() {
   // (2) Load all the system settings into the session
   status = NvAPI_DRS_LoadSettings(hSession);
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::Initialize - Failed to load DRS settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: Initialize failed - Failed to load DRS settings: "
+      << GetNvAPIErrorString(status);
     NvAPI_DRS_DestroySession(hSession);
     session_handle = nullptr;
     NvAPI_Unload();
@@ -94,8 +93,8 @@ bool NvidiaControlPanel::Initialize() {
   NvDRSProfileHandle hProfile = nullptr;
   status = NvAPI_DRS_GetBaseProfile(hSession, &hProfile);
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::Initialize - Failed to get base profile: "
-              << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: Initialize failed - Failed to get base profile: "
+              << GetNvAPIErrorString(status);
     NvAPI_DRS_DestroySession(hSession);
     session_handle = nullptr;
     NvAPI_Unload();
@@ -111,9 +110,9 @@ bool NvidiaControlPanel::HasNvidiaGPUImpl() {
   // Initialize NVAPI
   NvAPI_Status status = NvAPI_Initialize();
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::HasNvidiaGPUImpl - Failed to initialize NVAPI: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: HasNvidiaGPUImpl failed - Failed to initialize NVAPI: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -123,9 +122,9 @@ bool NvidiaControlPanel::HasNvidiaGPUImpl() {
 
   status = NvAPI_EnumPhysicalGPUs(gpus, &gpu_count);
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::HasNvidiaGPUImpl - Failed to enumerate GPUs: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: HasNvidiaGPUImpl failed - Failed to enumerate GPUs: "
+      << GetNvAPIErrorString(status);
     NvAPI_Unload();
     return false;
   }
@@ -184,9 +183,9 @@ bool NvidiaControlPanel::ApplyVSyncSetting(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyVSyncSetting - Failed to set VSYNC setting: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyVSyncSetting failed - Failed to set VSYNC setting: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -194,9 +193,9 @@ bool NvidiaControlPanel::ApplyVSyncSetting(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyVSyncSetting - Failed to save settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyVSyncSetting failed - Failed to save settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -223,17 +222,16 @@ bool NvidiaControlPanel::GetVSyncSettingValue(int& value) {
                          VSYNCMODE_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetVSyncSettingValue - Failed to get "
+    LOG_ERROR << "NvidiaControlPanel: GetVSyncSettingValue failed - Failed to get "
                  "VSYNC setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetVSyncSettingValue - VSYNC setting is "
-                 "not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetVSyncSettingValue failed - VSYNC setting is "
+                 "not a DWORD type";
     return false;
   }
 
@@ -278,9 +276,9 @@ bool NvidiaControlPanel::ApplyPowerManagementMode(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyPowerManagementMode - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyPowerManagementMode failed - Failed to set "
                  "power mode: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -288,9 +286,9 @@ bool NvidiaControlPanel::ApplyPowerManagementMode(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyPowerManagementMode - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyPowerManagementMode failed - Failed to "
                  "save settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -317,17 +315,16 @@ bool NvidiaControlPanel::GetPowerManagementModeValue(int& value) {
                          PREFERRED_PSTATE_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetPowerManagementModeValue - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: GetPowerManagementModeValue failed - Failed to "
                  "get power mode setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetPowerManagementModeValue - Power mode "
-                 "setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetPowerManagementModeValue failed - Power mode "
+                 "setting is not a DWORD type";
     return false;
   }
 
@@ -358,9 +355,9 @@ bool NvidiaControlPanel::ApplyAnisoModeSelector(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAnisoModeSelector - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyAnisoModeSelector failed - Failed to set "
                  "Anisotropic Mode Selector setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -368,9 +365,9 @@ bool NvidiaControlPanel::ApplyAnisoModeSelector(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAnisoModeSelector - Failed to save "
+    LOG_ERROR << "NvidiaControlPanel: ApplyAnisoModeSelector failed - Failed to save "
                  "settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -397,17 +394,16 @@ bool NvidiaControlPanel::GetAnisoModeSelectorValue(int& value) {
                          ANISO_MODE_SELECTOR_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetAnisoModeSelectorValue - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoModeSelectorValue failed - Failed to "
                  "get Anisotropic Mode Selector setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetAnisoModeSelectorValue - Anisotropic "
-                 "Mode Selector setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoModeSelectorValue failed - Anisotropic "
+                 "Mode Selector setting is not a DWORD type";
     return false;
   }
 
@@ -438,9 +434,9 @@ bool NvidiaControlPanel::ApplyAnisoLevel(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAnisoLevel - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyAnisoLevel failed - Failed to set "
                  "Anisotropic Level setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -448,9 +444,9 @@ bool NvidiaControlPanel::ApplyAnisoLevel(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyAnisoLevel - Failed to save settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyAnisoLevel failed - Failed to save settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -477,17 +473,16 @@ bool NvidiaControlPanel::GetAnisoLevelValue(int& value) {
                          ANISO_MODE_LEVEL_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetAnisoLevelValue - Failed to get "
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoLevelValue failed - Failed to get "
                  "Anisotropic Level setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetAnisoLevelValue - Anisotropic Level "
-                 "setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoLevelValue failed - Anisotropic Level "
+                 "setting is not a DWORD type";
     return false;
   }
 
@@ -528,9 +523,9 @@ bool NvidiaControlPanel::ApplyAAModeSelector(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAAModeSelector - Failed to set AA "
+    LOG_ERROR << "NvidiaControlPanel: ApplyAAModeSelector failed - Failed to set AA "
                  "Mode Selector setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -538,9 +533,9 @@ bool NvidiaControlPanel::ApplyAAModeSelector(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyAAModeSelector - Failed to save settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyAAModeSelector failed - Failed to save settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -567,17 +562,16 @@ bool NvidiaControlPanel::GetAAModeSelectorValue(int& value) {
                          AA_MODE_SELECTOR_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetAAModeSelectorValue - Failed to get "
+    LOG_ERROR << "NvidiaControlPanel: GetAAModeSelectorValue failed - Failed to get "
                  "AA Mode Selector setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetAAModeSelectorValue - AA Mode "
-                 "Selector setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetAAModeSelectorValue failed - AA Mode "
+                 "Selector setting is not a DWORD type";
     return false;
   }
 
@@ -618,9 +612,9 @@ bool NvidiaControlPanel::ApplyAAMethod(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyAAMethod - Failed to set AA Method setting: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyAAMethod failed - Failed to set AA Method setting: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -628,8 +622,8 @@ bool NvidiaControlPanel::ApplyAAMethod(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAAMethod - Failed to save settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: ApplyAAMethod failed - Failed to save settings: "
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -656,17 +650,16 @@ bool NvidiaControlPanel::GetAAMethodValue(int& value) {
                          AA_MODE_METHOD_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetAAMethodValue - Failed to get AA "
+    LOG_ERROR << "NvidiaControlPanel: GetAAMethodValue failed - Failed to get AA "
                  "Method setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetAAMethodValue - AA Method setting is "
-                 "not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetAAMethodValue failed - AA Method setting is "
+                 "not a DWORD type";
     return false;
   }
 
@@ -754,8 +747,7 @@ std::vector<std::unique_ptr<optimizations::settings::OptimizationEntity>> Nvidia
 
   // Initialize the API if it's not already initialized
   if (!initialized && !Initialize()) {
-    std::cout << "NvidiaControlPanel: Failed to initialize NVIDIA API"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: CreateNvidiaOptimizations failed - Failed to initialize NVIDIA API";
     return optimizations;
   }
 
@@ -1028,9 +1020,9 @@ bool NvidiaControlPanel::RefreshSettings() {
   NvAPI_Status status =
     NvAPI_DRS_LoadSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::RefreshSettings - Failed to reload settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: RefreshSettings failed - Failed to reload settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1055,9 +1047,9 @@ bool NvidiaControlPanel::ApplyMonitorTechnology(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyMonitorTechnology - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyMonitorTechnology failed - Failed to set "
                  "Monitor Technology setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1065,9 +1057,9 @@ bool NvidiaControlPanel::ApplyMonitorTechnology(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyMonitorTechnology - Failed to save "
+    LOG_ERROR << "NvidiaControlPanel: ApplyMonitorTechnology failed - Failed to save "
                  "settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1090,17 +1082,16 @@ bool NvidiaControlPanel::GetMonitorTechnologyValue(int& value) {
                          VRR_APP_OVERRIDE_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetMonitorTechnologyValue - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: GetMonitorTechnologyValue failed - Failed to "
                  "get Monitor Technology setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetMonitorTechnologyValue - Monitor "
-                 "Technology setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetMonitorTechnologyValue failed - Monitor "
+                 "Technology setting is not a DWORD type";
     return false;
   }
 
@@ -1136,9 +1127,9 @@ bool NvidiaControlPanel::ApplyGDICompatibility(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyGDICompatibility - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyGDICompatibility failed - Failed to set "
                  "OpenGL GDI Compatibility setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1146,9 +1137,9 @@ bool NvidiaControlPanel::ApplyGDICompatibility(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyGDICompatibility - Failed to save settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyGDICompatibility failed - Failed to save settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1171,17 +1162,16 @@ bool NvidiaControlPanel::GetGDICompatibilityValue(int& value) {
                          OGL_CPL_GDI_COMPATIBILITY_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetGDICompatibilityValue - Failed to get "
+    LOG_ERROR << "NvidiaControlPanel: GetGDICompatibilityValue failed - Failed to get "
                  "OpenGL GDI Compatibility setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetGDICompatibilityValue - OpenGL GDI "
-                 "Compatibility setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetGDICompatibilityValue failed - OpenGL GDI "
+                 "Compatibility setting is not a DWORD type";
     return false;
   }
 
@@ -1217,9 +1207,9 @@ bool NvidiaControlPanel::ApplyPreferredRefreshRate(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyPreferredRefreshRate - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyPreferredRefreshRate failed - Failed to "
                  "set Preferred Refresh Rate setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1227,9 +1217,9 @@ bool NvidiaControlPanel::ApplyPreferredRefreshRate(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyPreferredRefreshRate - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyPreferredRefreshRate failed - Failed to "
                  "save settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1252,17 +1242,16 @@ bool NvidiaControlPanel::GetPreferredRefreshRateValue(int& value) {
                          REFRESH_RATE_OVERRIDE_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetPreferredRefreshRateValue - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: GetPreferredRefreshRateValue failed - Failed to "
                  "get Preferred Refresh Rate setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetPreferredRefreshRateValue - Preferred "
-                 "Refresh Rate setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetPreferredRefreshRateValue failed - Preferred "
+                 "Refresh Rate setting is not a DWORD type";
     return false;
   }
 
@@ -1299,9 +1288,9 @@ bool NvidiaControlPanel::ApplyTextureFilteringQuality(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyTextureFilteringQuality - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyTextureFilteringQuality failed - Failed to "
                  "set Texture Filtering Quality setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1309,9 +1298,9 @@ bool NvidiaControlPanel::ApplyTextureFilteringQuality(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyTextureFilteringQuality - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyTextureFilteringQuality failed - Failed to "
                  "save settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1334,17 +1323,16 @@ bool NvidiaControlPanel::GetTextureFilteringQualityValue(int& value) {
                          QUALITY_ENHANCEMENTS_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetTextureFilteringQualityValue - Failed "
+    LOG_ERROR << "NvidiaControlPanel: GetTextureFilteringQualityValue failed - Failed "
                  "to get Texture Filtering Quality setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetTextureFilteringQualityValue - "
-                 "Texture Filtering Quality setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetTextureFilteringQualityValue failed - "
+                 "Texture Filtering Quality setting is not a DWORD type";
     return false;
   }
 
@@ -1380,9 +1368,9 @@ bool NvidiaControlPanel::ApplyAnisoSampleOpt(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyAnisoSampleOpt - Failed to set "
+    LOG_ERROR << "NvidiaControlPanel: ApplyAnisoSampleOpt failed - Failed to set "
                  "Anisotropic Sample Optimization setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1390,9 +1378,9 @@ bool NvidiaControlPanel::ApplyAnisoSampleOpt(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout
-      << "NvidiaControlPanel::ApplyAnisoSampleOpt - Failed to save settings: "
-      << GetNvAPIErrorString(status) << std::endl;
+    LOG_ERROR
+      << "NvidiaControlPanel: ApplyAnisoSampleOpt failed - Failed to save settings: "
+      << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1415,17 +1403,16 @@ bool NvidiaControlPanel::GetAnisoSampleOptValue(int& value) {
                          PS_TEXFILTER_ANISO_OPTS2_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetAnisoSampleOptValue - Failed to get "
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoSampleOptValue failed - Failed to get "
                  "Anisotropic Sample Optimization setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetAnisoSampleOptValue - Anisotropic "
-                 "Sample Optimization setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetAnisoSampleOptValue failed - Anisotropic "
+                 "Sample Optimization setting is not a DWORD type";
     return false;
   }
 
@@ -1461,9 +1448,9 @@ bool NvidiaControlPanel::ApplyThreadedOptimization(int value) {
     static_cast<NvDRSProfileHandle>(base_profile_handle), &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyThreadedOptimization - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyThreadedOptimization failed - Failed to "
                  "set Threaded Optimization setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1471,9 +1458,9 @@ bool NvidiaControlPanel::ApplyThreadedOptimization(int value) {
   status =
     NvAPI_DRS_SaveSettings(static_cast<NvDRSSessionHandle>(session_handle));
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::ApplyThreadedOptimization - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: ApplyThreadedOptimization failed - Failed to "
                  "save settings: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
@@ -1496,17 +1483,16 @@ bool NvidiaControlPanel::GetThreadedOptimizationValue(int& value) {
                          OGL_THREAD_CONTROL_ID, &nvSetting);
 
   if (status != NVAPI_OK) {
-    std::cout << "NvidiaControlPanel::GetThreadedOptimizationValue - Failed to "
+    LOG_ERROR << "NvidiaControlPanel: GetThreadedOptimizationValue failed - Failed to "
                  "get Threaded Optimization setting: "
-              << GetNvAPIErrorString(status) << std::endl;
+              << GetNvAPIErrorString(status);
     return false;
   }
 
   // Make sure it's the right type
   if (nvSetting.settingType != NVDRS_DWORD_TYPE) {
-    std::cout << "NvidiaControlPanel::GetThreadedOptimizationValue - Threaded "
-                 "Optimization setting is not a DWORD type"
-              << std::endl;
+    LOG_ERROR << "NvidiaControlPanel: GetThreadedOptimizationValue failed - Threaded "
+                 "Optimization setting is not a DWORD type";
     return false;
   }
 

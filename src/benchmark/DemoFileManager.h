@@ -15,7 +15,7 @@ class DemoFileManager : public QObject {
   bool copyDemoFile(const QString& destPath);
   bool copyDemoFiles(const QString& destPath);
   QString findRustDemosFolder() const;
-  QString findLatestBenchmarkFile() const;
+  QString findLatestBenchmarkFile();
 
   // New methods to manage benchmark files
   QString findAppBenchmarkFile() const;
@@ -44,5 +44,6 @@ class DemoFileManager : public QObject {
   bool validateDemoFile(const QString& path) const;
   bool ensureDirectoryExists(const QString& path) const;
   bool isValidDemoFile(const QString& path) const;
+  QStringList getBenchmarkSearchPaths() const;
   QString m_benchmarkFileName;
 };

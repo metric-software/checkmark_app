@@ -1,6 +1,6 @@
 #include "VisualEffectsManager.h"
 
-#include <iostream>
+#include "logging/Logger.h"
 
 #include <Windows.h>
 #include <dwmapi.h>
@@ -223,9 +223,7 @@ bool VisualEffectsManager::ApplyRecommendedSettings() {
     "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
     "ListviewShadow", 0);
 
-  std::cout << "[VisualEffectsManager.cpp::ApplyRecommendedSettings] Setting "
-               "ListviewAlphaSelect to 1."
-            << std::endl;
+  LOG_DEBUG << "[VisualEffectsManager.cpp::ApplyRecommendedSettings] Setting ListviewAlphaSelect to 1.";
   // Enable show translucent selection rectangle
   success &= SetRegistryDWORD(
     "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",

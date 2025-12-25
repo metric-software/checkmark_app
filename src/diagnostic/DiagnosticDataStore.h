@@ -266,6 +266,12 @@ class DiagnosticDataStore {
     double totalGpuUsage = -1.0;
     double systemDpcTime = -1.0;
     double systemInterruptTime = -1.0;
+    double peakCpuUsage = -1.0;
+    double peakGpuUsage = -1.0;
+    double peakSystemDpcTime = -1.0;
+    double peakSystemInterruptTime = -1.0;
+    double systemDiskIO = -1.0;
+    double peakSystemDiskIO = -1.0;
 
     struct MemoryMetrics {
       double commitLimitMB = -1.0;

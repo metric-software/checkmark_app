@@ -3,7 +3,8 @@
 bool BenchmarkCharts::ensureOutputDirExists(QDir& outputDir) {
   if (!outputDir.exists()) {
     if (!outputDir.mkpath(".")) {
-      std::cout << "Failed to create html_reports directory" << std::endl;
+      LOG_ERROR << "Failed to create output directory: "
+                << outputDir.absolutePath().toStdString();
       return false;
     }
   }

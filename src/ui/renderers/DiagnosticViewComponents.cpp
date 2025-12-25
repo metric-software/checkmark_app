@@ -314,7 +314,7 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   // Create the user's result bar
   QHBoxLayout* userLayout = new QHBoxLayout();
   userLayout->setContentsMargins(0, 0, 0, 0);
-  userLayout->setSpacing(8);
+  userLayout->setSpacing(4);
 
   // Add CPU name label on the left with actual CPU name
   QLabel* userNameLabel = new QLabel(userItemName);
@@ -355,44 +355,30 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   userBar->setStyleSheet(
     QString("background-color: %1; border-radius: 2px;").arg(userBarColor));
 
-  // Add percentage difference label inside the bar
-  QLabel* percentageLabel = nullptr;
-  if (comparisonValue > 0) {
-    double percentChange = 0;
-    if (lowerIsBetter) {
-      // For lower-is-better metrics, negative percent means user is better
-      percentChange = ((value / comparisonValue) - 1.0) * 100.0;
-    } else {
-      // For higher-is-better metrics, positive percent means user is better
-      percentChange = ((value / comparisonValue) - 1.0) * 100.0;
-    }
+  // Percentage change label lives at the end of the bar (not over it).
+  QLabel* percentageLabel = new QLabel("-");
+  percentageLabel->setObjectName("percentageLabel");
+  percentageLabel->setFixedWidth(60);
+  percentageLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  percentageLabel->setStyleSheet(
+    "color: #888888; font-style: italic; background: transparent;");
 
-    QString percentText;
-    QString percentColor;
+  if (comparisonValue > 0 && value > 0) {
+    const double percentChange = ((value / comparisonValue) - 1.0) * 100.0;
+    const bool isBetter =
+      (lowerIsBetter && percentChange < 0) ||
+      (!lowerIsBetter && percentChange > 0);
 
-    // Determine if user result is better or worse
-    bool isBetter = (lowerIsBetter && percentChange < 0) ||
-                    (!lowerIsBetter && percentChange > 0);
-    bool isApproxEqual = qAbs(percentChange) < 1.0;
+    QString percentText =
+      QString("%1%2%")
+        .arg(percentChange > 0 ? "+" : "")
+        .arg(percentChange, 0, 'f', 1);
+    QString percentColor = isBetter ? "#44FF44" : "#FF4444";
 
-    if (isApproxEqual) {
-      percentText = "≈";
-      percentColor = "#FFAA00";  // Yellow for equal
-    } else {
-      percentText =
-        QString("%1%2%")
-          .arg(isBetter ? "+" : "")  // Add + prefix for better results
-          .arg(percentChange, 0, 'f', 1);
-      percentColor =
-        isBetter ? "#44FF44" : "#FF4444";  // Green for better, red for worse
-    }
-
-    // Create the label and add it to the bar
-    percentageLabel = new QLabel(percentText);
+    percentageLabel->setText(percentText);
     percentageLabel->setStyleSheet(
       QString("color: %1; background: transparent; font-weight: bold;")
         .arg(percentColor));
-    percentageLabel->setAlignment(Qt::AlignCenter);
   }
 
   QWidget* userSpacer = new QWidget();
@@ -402,20 +388,10 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   userBarLayout->addWidget(userBar, userPercentage);
   userBarLayout->addWidget(userSpacer, 100 - userPercentage);
 
-  // Add the percentage label on top of the bar layout if it exists
-  if (percentageLabel) {
-    // Remove margins first to position the label properly
-    userBarLayout->setContentsMargins(0, 0, 0, 0);
-
-    // Create an overlay layout
-    QHBoxLayout* overlayLayout = new QHBoxLayout(userBar);
-    overlayLayout->setObjectName("overlayLayout");
-    overlayLayout->setContentsMargins(0, 0, 0, 0);
-    percentageLabel->setObjectName("percentageLabel");
-    overlayLayout->addWidget(percentageLabel);
-  }
-
-  userLayout->addWidget(userBarContainer);
+  percentageLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+  userLayout->addWidget(userBarContainer, /*stretch*/ 1);
+  userLayout->addWidget(percentageLabel);
+  userLayout->setStretchFactor(userBarContainer, 1);
 
   // Show the actual value with the same color - fixed width for alignment
   QString resultText = QString("%1 %2").arg(value, 0, 'f', 1).arg(unit);
@@ -434,7 +410,7 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
   // Create the comparison bar
   QHBoxLayout* compLayout = new QHBoxLayout();
   compLayout->setContentsMargins(0, 0, 0, 0);
-  compLayout->setSpacing(8);
+  compLayout->setSpacing(4);
 
   // Add comparison CPU name or placeholder
   QLabel* compNameLabel = new QLabel("Select CPU to compare");
@@ -506,7 +482,14 @@ QWidget* createComparisonPerformanceBar(const QString& label, double value,
     compBarLayout->addWidget(emptyBar);
   }
 
-  compLayout->addWidget(compBarContainer);
+  compLayout->addWidget(compBarContainer, /*stretch*/ 1);
+  compLayout->setStretchFactor(compBarContainer, 1);
+
+  // Keep horizontal space consistent with the user row's percentage label.
+  QWidget* compPercentSpacer = new QWidget();
+  compPercentSpacer->setFixedWidth(60);
+  compPercentSpacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+  compLayout->addWidget(compPercentSpacer);
 
   // Value label with same fixed width for alignment
   QLabel* compValueLabel =

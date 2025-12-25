@@ -47,8 +47,10 @@ devcommands.txt
 
 # Local signing configuration (keep private)
 scripts/signing.local.ps1
-
-
+scripts/signing.example.ps1
+scripts/signing_common.ps1
+scripts/sign_release.ps1
+scripts/sign_installer.ps1
 
 
 # Misc top-level
@@ -77,4 +79,5 @@ scripts/publish_r2.ps1
 *.user
 *.VC.db
 *.VC.VC.opendb
+misc/demo_manifest.json
 

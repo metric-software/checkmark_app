@@ -1269,7 +1269,8 @@ void RustConfigManager::InitializeFocusedSettings() {
       } else if (key == "graphics.reflexmode") {
         setting.possibleValues = {QVariant("0"), QVariant("1"), QVariant("2")};
       } else if (key == "graphics.shaderlod") {
-        setting.possibleValues = {QVariant("100"), QVariant("300")};
+        // Newer Rust builds use lower shader LOD values (e.g., 1)
+        setting.possibleValues = {QVariant("1"), QVariant("2"), QVariant("3")};
       } else if (key == "graphics.shadowlights") {
         setting.possibleValues = {QVariant("0"), QVariant("3")};
       } else if (key == "graphics.shadowmode") {
@@ -1345,7 +1346,7 @@ std::map<QString, QString> RustConfigManager::GetExpectedValues() const {
           {"graphics.maxqueuedframes", "2"},
           {"graphics.parallax", "0"},
           {"graphics.reflexmode", "2"},
-          {"graphics.shaderlod", "100"},
+          {"graphics.shaderlod", "1"},
           {"graphics.shadowlights", "0"},
           {"graphics.shadowmode", "1"},
           {"graphics.shadowquality", "0"},

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 
 #include <QApplication>
 #include <QComboBox>
@@ -177,23 +176,7 @@ std::map<QString, CPUComparisonData> CPUResultRenderer::loadCPUComparisonData() 
 CPUComparisonData CPUResultRenderer::convertNetworkDataToCPU(const ComponentData& networkData) {
   CPUComparisonData cpu;
   
-  LOG_INFO << "CPUResultRenderer: Converting network data to CPU comparison data";
-  
-  // Log the COMPLETE ComponentData structure
-  std::cout << "\n=== CPUResultRenderer: COMPLETE ComponentData DEBUG INFO ===" << std::endl;
-  std::cout << "Component Name: " << networkData.componentName.toStdString() << std::endl;
-  
-  // Log testData JSON
-  QJsonDocument testDataDoc(networkData.testData);
-  QString testDataString = testDataDoc.toJson(QJsonDocument::Indented);
-  std::cout << "testData JSON:\n" << testDataString.toStdString() << std::endl;
-  
-  // Log metaData JSON  
-  QJsonDocument metaDataDoc(networkData.metaData);
-  QString metaDataString = metaDataDoc.toJson(QJsonDocument::Indented);
-  std::cout << "metaData JSON:\n" << metaDataString.toStdString() << std::endl;
-  
-  std::cout << "=== END ComponentData DEBUG INFO ===\n" << std::endl;
+  LOG_DEBUG << "CPUResultRenderer: Converting network data for: " << networkData.componentName.toStdString();
   
   // The testData QJsonObject contains the full component structure
   QJsonObject rootData = networkData.testData;
@@ -289,10 +272,9 @@ CPUComparisonData CPUResultRenderer::convertNetworkDataToCPU(const ComponentData
       }
   }
   
-  std::cout << "CPUResultRenderer: Successfully parsed performance data!" << std::endl;
-  std::cout << "Single-core: " << cpu.singleCoreTime << "ms, Four-thread: " << cpu.fourThreadTime << "ms" << std::endl;
+  LOG_DEBUG << "CPUResultRenderer: Parsed performance - single_core=" << cpu.singleCoreTime 
+            << "ms, four_thread=" << cpu.fourThreadTime << "ms";
   
-  LOG_INFO << "CPUResultRenderer: Conversion complete";
   return cpu;
 }
 
@@ -923,7 +905,7 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
 
   auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
     QWidget* userBarContainer =
-      parentContainer->findChild<QWidget*>("userBarContainer");
+      parentContainer ? parentContainer->findChild<QWidget*>("userBarContainer") : nullptr;
     if (!userBarContainer) {
       return;
     }
@@ -1048,63 +1030,37 @@ QComboBox* CPUResultRenderer::createCPUComparisonDropdown(
           }
         }
 
+        QWidget* containerWithBars = parentContainer;
         QWidget* userBarContainer =
-          parentContainer->findChild<QWidget*>("userBarContainer");
-        QWidget* userBarFill = userBarContainer
-                                 ? userBarContainer->findChild<QWidget*>(
-                                     "user_bar_fill")
-                                 : nullptr;
-        if (userBarFill) {
-          QLabel* existingLabel =
-            userBarFill->findChild<QLabel*>("percentageLabel");
-          if (existingLabel) {
-            delete existingLabel;
-          }
+          containerWithBars ? containerWithBars->findChild<QWidget*>("userBarContainer") : nullptr;
+        QLabel* percentageLabel =
+          containerWithBars ? containerWithBars->findChild<QLabel*>("percentageLabel") : nullptr;
+        if (!userBarContainer || !percentageLabel) {
+          continue;
+        }
 
-          if (hasSelection && test.compValue > 0 && test.userValue > 0) {
-            double percentChange = 0;
-            if (test.lowerIsBetter) {
-              percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
-            } else {
-              percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
-            }
+        if (!hasSelection || test.compValue <= 0 || test.userValue <= 0) {
+          percentageLabel->setText("-");
+          percentageLabel->setStyleSheet(
+            "color: #888888; font-style: italic; background: transparent;");
+        } else {
+          const double percentChange =
+            ((test.userValue / test.compValue) - 1.0) * 100.0;
 
-            QString percentText;
-            QString percentColor;
+          QString percentText =
+            QString("%1%2%")
+              .arg(percentChange > 0 ? "+" : "")
+              .arg(percentChange, 0, 'f', 1);
+          const bool isBetter =
+            (test.lowerIsBetter && percentChange < 0) ||
+            (!test.lowerIsBetter && percentChange > 0);
+          QString percentColor = isBetter ? "#44FF44" : "#FF4444";
 
-            const bool isBetter =
-              (test.lowerIsBetter && percentChange < 0) ||
-              (!test.lowerIsBetter && percentChange > 0);
-            const bool isApproxEqual = qAbs(percentChange) < 1.0;
-
-            if (isApproxEqual) {
-              percentText = "≈";
-              percentColor = "#FFAA00";
-            } else {
-              percentText =
-                QString("%1%2%")
-                  .arg(isBetter ? "+" : "")
-                  .arg(percentChange, 0, 'f', 1);
-              percentColor = isBetter ? "#44FF44" : "#FF4444";
-            }
-
-            QHBoxLayout* overlayLayout =
-              userBarFill->findChild<QHBoxLayout*>("overlayLayout");
-            if (!overlayLayout) {
-              overlayLayout = new QHBoxLayout(userBarFill);
-              overlayLayout->setObjectName("overlayLayout");
-              overlayLayout->setContentsMargins(0, 0, 0, 0);
-            }
-
-            QLabel* percentageLabel = new QLabel(percentText);
-            percentageLabel->setObjectName("percentageLabel");
-            percentageLabel->setStyleSheet(
-              QString(
-                "color: %1; background: transparent; font-weight: bold;")
-                .arg(percentColor));
-            percentageLabel->setAlignment(Qt::AlignCenter);
-            overlayLayout->addWidget(percentageLabel);
-          }
+          percentageLabel->setText(percentText);
+          percentageLabel->setStyleSheet(
+            QString(
+              "color: %1; background: transparent; font-weight: bold;")
+              .arg(percentColor));
         }
       }
     };
@@ -2290,6 +2246,40 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
             valueLabel->setStyleSheet(
               "color: #FF4444; background: transparent;");
           }
+        }
+
+        QWidget* containerWithBars = parentContainer;
+        QWidget* userBarContainer =
+          containerWithBars
+            ? containerWithBars->findChild<QWidget*>("userBarContainer")
+            : nullptr;
+        QLabel* percentageLabel =
+          containerWithBars
+            ? containerWithBars->findChild<QLabel*>("percentageLabel")
+            : nullptr;
+        if (!userBarContainer || !percentageLabel) {
+          continue;
+        }
+
+        if (!hasSelection || compLatency <= 0 || userLatency <= 0) {
+          percentageLabel->setText("-");
+          percentageLabel->setStyleSheet(
+            "color: #888888; font-style: italic; background: transparent;");
+        } else {
+          const double percentChange =
+            ((userLatency / compLatency) - 1.0) * 100.0;
+
+          QString percentText =
+            QString("%1%2%")
+              .arg(percentChange > 0 ? "+" : "")
+              .arg(percentChange, 0, 'f', 1);
+          const bool isBetter = percentChange < 0;  // Lower latency is better
+          QString percentColor = isBetter ? "#44FF44" : "#FF4444";
+
+          percentageLabel->setText(percentText);
+          percentageLabel->setStyleSheet(
+            QString("color: %1; background: transparent; font-weight: bold;")
+              .arg(percentColor));
         }
       }
     };

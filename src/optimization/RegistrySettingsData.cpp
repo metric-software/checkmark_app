@@ -563,30 +563,6 @@ const std::vector<RegistrySettingDefinition>& GetRegistrySettingDefinitions() {
       }
     },
     {
-      std::string("win.update.getuptodate"),
-      std::string("Get Me Up to Date"),
-      std::string("Controls whether Windows actively checks for and installs updates"),
-      std::string("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update"),
-      std::string("AUOptions"),
-      OptimizationValue{4},
-      OptimizationValue{3},
-      std::string("System"),
-      std::string("Updates"),
-      false,
-      true,
-      true,
-      0,
-      false,
-      false,
-      false,
-      {},
-      {
-        {OptimizationValue{2}, std::string("Notify before download")},
-        {OptimizationValue{3}, std::string("Download and notify before install")},
-        {OptimizationValue{4}, std::string("Automatic download and install (default)")},
-      }
-    },
-    {
       std::string("win.explorer.hidefileext"),
       std::string("Hide File Extensions"),
       std::string("Controls whether file extensions are hidden in File Explorer"),

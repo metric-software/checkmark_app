@@ -334,7 +334,8 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
                                 double userPeakVal,
                                 int decimals,
                                 double warnThreshold,
-                                double typicalAvgVal) {
+                                double typicalAvgVal,
+                                double typicalPeakVal) {
       const QString userColor = colorForPercent(userAvgVal, warnThreshold);
       const QString peakColor = colorForPercent(userPeakVal, warnThreshold);
 
@@ -343,22 +344,33 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
       const QString userPeak =
         userValueSpan(formatPercent(userPeakVal, decimals), peakColor);
 
-      const bool showTypical = typicalAvgVal >= 0.0;
+      const bool showTypical =
+        (typicalAvgVal >= 0.0) || (typicalPeakVal >= 0.0);
       const QString typicalAvg = formatPercent(typicalAvgVal, decimals);
-      const QString typicalPeak = QStringLiteral("-");
+      const QString typicalPeak = formatPercent(typicalPeakVal, decimals);
 
       html += renderMetricBlock(
         title, renderAvgPeakTable(userAvg, userPeak, typicalAvg, typicalPeak, showTypical));
     };
 
-    auto addDiskMetric = [&](double userAvgVal, double userPeakVal) {
+    auto addDiskMetric = [&](double userAvgVal,
+                             double userPeakVal,
+                             double typicalAvgVal,
+                             double typicalPeakVal) {
       const QString userColor = colorForDisk(userAvgVal, 50.0);
       const QString peakColor = colorForDisk(userPeakVal, 100.0);
       const QString userAvg = userValueSpan(formatMBps(userAvgVal), userColor);
       const QString userPeak = userValueSpan(formatMBps(userPeakVal), peakColor);
+
+      const bool showTypical =
+        (typicalAvgVal >= 0.0) || (typicalPeakVal >= 0.0);
+      const QString typicalAvg = formatMBps(typicalAvgVal);
+      const QString typicalPeak = formatMBps(typicalPeakVal);
+
       html += renderMetricBlock(
         QStringLiteral("Disk I/O"),
-        renderAvgPeakTable(userAvg, userPeak, QString(), QString(), false));
+        renderAvgPeakTable(
+          userAvg, userPeak, typicalAvg, typicalPeak, showTypical));
     };
 
     const double cpuPeak =
@@ -377,14 +389,14 @@ QString BackgroundProcessRenderer::renderBackgroundProcessResults(
       bgData.peakSystemDiskIO > 0 ? bgData.peakSystemDiskIO : -1.0;
 
     addPercentMetric(QStringLiteral("CPU Usage"), cpuUsage, cpuPeak, 1, 20.0,
-                     general.totalCpuUsage);
+                     general.totalCpuUsage, general.peakCpuUsage);
     addPercentMetric(QStringLiteral("GPU Usage"), gpuUsage, gpuPeak, 1, 20.0,
-                     general.totalGpuUsage);
+                     general.totalGpuUsage, general.peakGpuUsage);
     addPercentMetric(QStringLiteral("DPC Time"), dpcTime, dpcPeak, 2, 1.0,
-                     general.systemDpcTime);
+                     general.systemDpcTime, general.peakSystemDpcTime);
     addPercentMetric(QStringLiteral("Interrupt Time"), intTime, intPeak, 2, 0.5,
-                     general.systemInterruptTime);
-    addDiskMetric(diskAvg, diskPeak);
+                     general.systemInterruptTime, general.peakSystemInterruptTime);
+    addDiskMetric(diskAvg, diskPeak, general.systemDiskIO, general.peakSystemDiskIO);
 
     // Memory metrics (use RAM-binned typicals when available)
     if (bgData.physicalTotalKB > 0 && bgData.physicalAvailableKB > 0) {

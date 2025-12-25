@@ -392,6 +392,13 @@ void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
         backgroundMetrics.totalGpuUsage = readDouble(bg, QStringLiteral("total_gpu_usage"));
         backgroundMetrics.systemDpcTime = readDouble(bg, QStringLiteral("system_dpc_time"));
         backgroundMetrics.systemInterruptTime = readDouble(bg, QStringLiteral("system_interrupt_time"));
+        backgroundMetrics.peakCpuUsage = readDouble(bg, QStringLiteral("peak_cpu_usage"));
+        backgroundMetrics.peakGpuUsage = readDouble(bg, QStringLiteral("peak_gpu_usage"));
+        backgroundMetrics.peakSystemDpcTime = readDouble(bg, QStringLiteral("peak_system_dpc_time"));
+        backgroundMetrics.peakSystemInterruptTime =
+          readDouble(bg, QStringLiteral("peak_system_interrupt_time"));
+        backgroundMetrics.systemDiskIO = readDouble(bg, QStringLiteral("system_disk_io"));
+        backgroundMetrics.peakSystemDiskIO = readDouble(bg, QStringLiteral("peak_system_disk_io"));
 
         auto parseMemoryMetrics = [&](const QVariant& v) -> DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetrics {
             DiagnosticDataStore::BackgroundProcessGeneralMetrics::MemoryMetrics out;
@@ -436,6 +443,12 @@ void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
                                 backgroundMetrics.totalGpuUsage >= 0.0 ||
                                 backgroundMetrics.systemDpcTime >= 0.0 ||
                                 backgroundMetrics.systemInterruptTime >= 0.0 ||
+                                backgroundMetrics.systemDiskIO >= 0.0 ||
+                                backgroundMetrics.peakCpuUsage >= 0.0 ||
+                                backgroundMetrics.peakGpuUsage >= 0.0 ||
+                                backgroundMetrics.peakSystemDpcTime >= 0.0 ||
+                                backgroundMetrics.peakSystemInterruptTime >= 0.0 ||
+                                backgroundMetrics.peakSystemDiskIO >= 0.0 ||
                                 backgroundMetrics.memoryMetrics.physicalTotalMB >= 0.0 ||
                                 !backgroundMetrics.memoryMetricsByRam.empty());
     }

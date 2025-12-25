@@ -1,4 +1,4 @@
-﻿#include "ui/GameBenchmarkView.h"
+#include "ui/GameBenchmarkView.h"
 
 #include <iostream>
 #include <fstream>
@@ -202,6 +202,17 @@ void GameBenchmarkView::setupUI() {
   QHBoxLayout* rustInfoLayout = new QHBoxLayout(rustInfoWidget);
   rustInfoLayout->setContentsMargins(
     0, 0, 0, 0);  // No margins to align with Instructions title
+
+  // Intro text for benchmark instructions
+  QLabel* rustIntroLabel = new QLabel(
+    "<b>This benchmark system is work in progress, and might not work on your "
+    "system yet.</b> Run the demo in Rust while Checkmark monitors PC and Rust "
+    "performance. Follow the instructions below to start:",
+    mainContentWidget);
+  rustIntroLabel->setStyleSheet("color: #ffffff; font-size: 12px;");
+  rustIntroLabel->setTextFormat(Qt::RichText);
+  rustIntroLabel->setWordWrap(true);
+  rustIntroLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
   QLabel* rustPathLabel = new QLabel(rustInfoWidget);
 
@@ -465,15 +476,22 @@ void GameBenchmarkView::setupUI() {
     // Setup demo files information
 
     QString demosPath = demoManager->findRustDemosFolder();
-    QString benchmarkFileName = demoManager->findLatestBenchmarkFile();
-    QString benchmarkFilePath = demosPath + "/" + benchmarkFileName + ".dem";
-    bool fileExists = QFileInfo::exists(benchmarkFilePath);
+    demoManager->findLatestBenchmarkFile();
+    QString resolvedBenchmarkFile = demoManager->getCurrentBenchmarkFilename();
+    QString benchmarkFileName = resolvedBenchmarkFile;
+    QString benchmarkFilePath;
+    if (!demosPath.isEmpty()) {
+      benchmarkFilePath = demosPath + "/" + resolvedBenchmarkFile;
+    }
+    bool fileExists = !benchmarkFilePath.isEmpty() &&
+                      QFileInfo::exists(benchmarkFilePath);
 
     // LOG_INFO << "GameBenchmarkView: Benchmark file path: " <<
     // benchmarkFilePath.toStdString() << std::endl;
 
     // For UI display, use a hardcoded name
-    QString displayFileName = "benchmark demo";
+    QString displayFileName =
+      resolvedBenchmarkFile.isEmpty() ? "benchmark.dem" : resolvedBenchmarkFile;
 
     // First, create a consistent layout for all instruction steps
     // 1. Add benchmark file to Rust demos folder
@@ -486,7 +504,7 @@ void GameBenchmarkView::setupUI() {
     QLabel* checkmarkLabel = new QLabel(this);
     checkmarkLabel->setFixedWidth(20);
     if (fileExists) {
-      checkmarkLabel->setText("âœ“");
+      checkmarkLabel->setText("✓");
       checkmarkLabel->setStyleSheet(
         "color: #44FF44; font-weight: bold; font-size: 14px; background: "
         "transparent;");
@@ -611,21 +629,12 @@ void GameBenchmarkView::setupUI() {
     newStepNumber->setStyleSheet(
       "color: #ffffff; font-size: 12px; background: transparent;");
 
-    // Get Rust installation path for the hyperlink
-    QString rustInstallPath = demoManager->findRustInstallationPath();
-
-    // Create instruction with hyperlink
-    QString rustPathInstruction =
-      QString("Start <b>RustClient.exe</b> from the <a "
-              "href=\"file:///%1\">installation folder</a> (This way EAC won't "
-              "start with Rust).")
-        .arg(QDir::toNativeSeparators(rustInstallPath));
-
-    QLabel* newStepLabel = new QLabel(rustPathInstruction, this);
+    QLabel* newStepLabel = new QLabel(
+      "Close recording/streaming software. Especially if you notice that the "
+      "application is not detecting the correct FPS values.",
+      this);
     newStepLabel->setStyleSheet(
       "color: #ffffff; font-size: 12px; background: transparent;");
-    newStepLabel->setOpenExternalLinks(true);
-    newStepLabel->setTextFormat(Qt::RichText);
     newStepLabel->setWordWrap(true);
 
     // LOG_INFO << "GameBenchmarkView: New step label created" << std::endl;
@@ -759,8 +768,13 @@ void GameBenchmarkView::setupUI() {
       16 + 20 + 15, 4, 0,
       0);  // Align with text after number, reduced top margin
 
-    QLabel* commandLabel =
-      new QLabel("demo.play benchmark", this);
+    const QString benchmarkCommandText =
+      QString("demo.play %1")
+        .arg(QFileInfo(resolvedBenchmarkFile).completeBaseName().isEmpty()
+               ? "benchmark"
+               : QFileInfo(resolvedBenchmarkFile).completeBaseName());
+
+    QLabel* commandLabel = new QLabel(benchmarkCommandText, this);
     commandLabel->setStyleSheet(R"(
             QLabel {
                 color: #ffffff;
@@ -846,6 +860,7 @@ void GameBenchmarkView::setupUI() {
     QVBoxLayout* rustInfoContainerLayout = new QVBoxLayout(rustInfoContainer);
     rustInfoContainerLayout->setContentsMargins(
       0, 8, 12, 4);  // Set left margin to 0 to match Instructions title
+    rustInfoContainerLayout->addWidget(rustIntroLabel);
     rustInfoContainerLayout->addWidget(rustInfoWidget);
 
     benchmarkContentLayout->addWidget(rustInfoContainer);
@@ -921,7 +936,7 @@ void GameBenchmarkView::setupUI() {
     outputContainerLayout->setSpacing(5);
 
     // Create expand button with hyperlink style - now using member variable
-    expandButton = new QPushButton("â–¼ Show Details", this);
+    expandButton = new QPushButton("v Show Details", this);
     expandButton->setStyleSheet(R"(
             QPushButton {
                 color: #0078d4;
@@ -1036,8 +1051,8 @@ void GameBenchmarkView::setupUI() {
     connect(expandButton, &QPushButton::clicked, [this]() {
       bool isExpanded = this->outputContent->isVisible();
       this->outputContent->setVisible(!isExpanded);
-      this->expandButton->setText(isExpanded ? "â–¼ Show Details"
-                                             : "â–² Hide Details");
+      this->expandButton->setText(isExpanded ? "v Show Details"
+                                             : "^ Hide Details");
     });
 
     // Create cooldown timer
@@ -1090,10 +1105,10 @@ void GameBenchmarkView::setupUI() {
     });
 
     // Connect copy command button
-    connect(copyCommandButton, &QPushButton::clicked, []() {
-      QGuiApplication::clipboard()->setText(
-        "demo.play benchmark");
-    });
+    connect(copyCommandButton, &QPushButton::clicked,
+            [benchmarkCommandText]() {
+              QGuiApplication::clipboard()->setText(benchmarkCommandText);
+            });
 
     // Update the click handler for copying demo files
     connect(
@@ -1114,13 +1129,13 @@ void GameBenchmarkView::setupUI() {
 
         if (reply == QMessageBox::Ok) {
           if (demoManager->copyDemoFiles(demosPath)) {
-            notificationBanner->setText("âœ“ Demo files copied successfully");
+            notificationBanner->setText("✓ Demo files copied successfully");
             notificationBanner->setStyleSheet(
               "QLabel { color: white; background: #28a745; padding: 8px; "
               "border-radius: 4px; font-size: 12px; }");
 
             // Update the checkmark
-            checkmarkLabel->setText("âœ“");
+            checkmarkLabel->setText("✓");
             checkmarkLabel->setStyleSheet(
               "color: #44FF44; font-weight: bold; font-size: 14px; background: "
               "transparent;");
@@ -1133,19 +1148,21 @@ void GameBenchmarkView::setupUI() {
             // completely
             firstLineLabel->setStyleSheet(
               "color: #999999; font-size: 12px; background: transparent;");
-            QString benchmarkFileName = demoManager->findLatestBenchmarkFile();
+            demoManager->findLatestBenchmarkFile();
+            QString benchmarkFileName =
+              demoManager->getCurrentBenchmarkFilename();
             firstLineLabel->setText(
               QString("Add <a style=\"color: #666666; text-decoration: "
                       "none;\">%1</a> to the "
                       "<a style=\"color: #666666; text-decoration: "
                       "none;\">Rust demos folder</a>.")
-                .arg(benchmarkFileName + ".dem"));
+                .arg(benchmarkFileName));
 
             // Disable the copy button
             copyButton->setEnabled(false);
           } else {
             notificationBanner->setText(
-              "âŒ Copy failed - Please add the files manually");
+              "❌ Copy failed - Please add the files manually");
             notificationBanner->setStyleSheet(
               "QLabel { color: white; background: #dc3545; padding: 8px; "
               "border-radius: 4px; font-size: 12px; }");
@@ -1243,7 +1260,7 @@ void GameBenchmarkView::setupUI() {
             [this, notificationBanner, slideAnimation](bool isActive) {
               if (isActive) {
                 notificationBanner->setText(
-                  "âš ï¸ Screen capture detected (NVENC). Stop recording/streaming "
+                  "⚠️ Screen capture detected (NVENC). Stop recording/streaming "
                   "(OBS, Discord Go Live, GeForce Experience/Instant Replay, "
                   "etc.) to avoid skewing FPS and frametime metrics.");
                 notificationBanner->setStyleSheet(
@@ -1283,7 +1300,7 @@ void GameBenchmarkView::setupUI() {
 
     // Update the checkmark based on whether the file exists in Rust demos folder
     if (fileExistsInRustDemos) {
-      checkmarkLabel->setText("âœ“");
+      checkmarkLabel->setText("✓");
       checkmarkLabel->setStyleSheet(
         "color: #44FF44; font-weight: bold; font-size: 14px; background: "
         "transparent;");
@@ -1427,7 +1444,7 @@ void GameBenchmarkView::onBenchmarkMetrics(const PM_METRICS& metrics) {
   // Auto-show output section on first metrics
   if (!receivedFirstMetrics) {
     outputContent->show();
-    expandButton->setText("â–² Hide Details");
+    expandButton->setText("^ Hide Details");
     receivedFirstMetrics = true;
 
     // Initialize process name (only once)
@@ -1517,12 +1534,12 @@ void GameBenchmarkView::onBenchmarkMetrics(const PM_METRICS& metrics) {
   // Update display resolution
   if (metrics.destWidth > 0 && metrics.destHeight > 0) {
     displayInfoLabel->setText(
-      QString("Resolution: <span style='color: #0078d4;'>%1Ã—%2</span>")
+      QString("Resolution: <span style='color: #0078d4;'>%1×%2</span>")
         .arg(metrics.destWidth)
         .arg(metrics.destHeight));
     
     // Update resolution in bottom text
-    displayTextLabel->setText(QString("Resolution: <span style='color: #ffffff;'>%1Ã—%2</span> | Process: <span style='color: #dddddd;'>RustClient.exe</span>").arg(metrics.destWidth).arg(metrics.destHeight));
+    displayTextLabel->setText(QString("Resolution: <span style='color: #ffffff;'>%1×%2</span> | Process: <span style='color: #dddddd;'>RustClient.exe</span>").arg(metrics.destWidth).arg(metrics.destHeight));
   }
 
   // NOTE: Low FPS percentiles are now updated by onBenchmarkSample() which receives
@@ -1683,7 +1700,7 @@ void GameBenchmarkView::onBenchmarkSample(const BenchmarkDataPoint& sample) {
   // Auto-show output section on first metrics
   if (!receivedFirstMetrics) {
     outputContent->show();
-    expandButton->setText("â–² Hide Details");
+    expandButton->setText("^ Hide Details");
     receivedFirstMetrics = true;
 
     // Initialize process name (only once)
@@ -1843,7 +1860,7 @@ void GameBenchmarkView::onBenchmarkSample(const BenchmarkDataPoint& sample) {
   // Update GPU temperature and VRAM
   if (sample.gpuTemp > 0) {
     QString tempColor = sample.gpuTemp > 80.0f ? "#FF4444" : (sample.gpuTemp > 70.0f ? "#FFAA00" : "#44FF44");
-    QString tempText = QString(" | Temp: <span style='color: %1;'>%2</span>Â°C")
+    QString tempText = QString(" | Temp: <span style='color: %1;'>%2</span>°C")
                          .arg(tempColor)
                          .arg(sample.gpuTemp, 0, 'f', 0);
     gpuUsageLabel->setText(gpuText + tempText);
@@ -1906,7 +1923,7 @@ void GameBenchmarkView::onBenchmarkFinished() {
     "<span style='color: #dddddd;'>GPU: -- ms (Avg) | -- ms (Max)</span>");
 
   outputContent->hide();
-  expandButton->setText("â–¼ Show Details");
+  expandButton->setText("v Show Details");
 
   // Start cooldown timer - during cooldown show appropriate text and disable button
   benchmarkButton->setText("Cooling down...");
@@ -2464,3 +2481,4 @@ void GameBenchmarkView::updateProgressDisplay() {
       break;
   }
 }
+

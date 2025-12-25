@@ -9,8 +9,9 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <sstream>
+
+#include "logging/Logger.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -773,14 +774,11 @@ bool RegistryBackupUtility::HasAdministratorPrivileges() const {
 
 void RegistryBackupUtility::LogRegistryOperation(const std::string& message,
                                                  bool is_error) const {
-  QDateTime current_time = QDateTime::currentDateTime();
-  std::string timestamp =
-    current_time.toString("yyyy-MM-dd hh:mm:ss").toStdString();
-  std::string level = is_error ? "ERROR" : "INFO";
-  std::string log_message =
-    "[" + timestamp + "] [" + level + "] [RegistryBackup] " + message;
-
-  std::cout << log_message << std::endl;
+  if (is_error) {
+    LOG_ERROR << "[RegistryBackup] " << message;
+  } else {
+    LOG_INFO << "[RegistryBackup] " << message;
+  }
 }
 
 size_t RegistryBackupUtility::GetFileSizeMB(

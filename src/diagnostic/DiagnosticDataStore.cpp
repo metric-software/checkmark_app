@@ -22,6 +22,9 @@ void DiagnosticDataStore::resetAllValues() {
   // Reset GPU data
   gpuData = GPUData();
 
+  // Reset cross-user background comparison metrics
+  backgroundGeneralMetrics = BackgroundProcessGeneralMetrics();
+
   // Reset background process data
   backgroundData = BackgroundProcessData();
 

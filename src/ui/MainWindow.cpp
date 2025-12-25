@@ -1,8 +1,6 @@
 #include "MainWindow.h"
 #include "../logging/Logger.h"
 
-#include <iostream>  // Add this line to fix std::cout errors
-
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>

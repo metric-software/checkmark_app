@@ -265,6 +265,33 @@ bool KillExistingEtwSession(const std::wstring& sessionName) {
   return (status == ERROR_SUCCESS || status == ERROR_WMI_INSTANCE_NOT_FOUND);
 }
 
+bool IsCheckmarkPresentMonSessionKeyName(const wchar_t* keyName) {
+  if (!keyName) {
+    return false;
+  }
+
+  const wchar_t* kPrefix = L"PresentMon_Session_";
+  const size_t prefixLen = wcslen(kPrefix);
+  if (wcsncmp(keyName, kPrefix, prefixLen) != 0) {
+    return false;
+  }
+
+  const wchar_t* p = keyName + prefixLen;
+  if (*p == L'\0') {
+    return false;
+  }
+
+  // Only delete keys that follow the exact session naming convention used by this app:
+  // "PresentMon_Session_<digits>".
+  for (; *p != L'\0'; ++p) {
+    if (*p < L'0' || *p > L'9') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool cleanupRegistryEntries() {
   HKEY hKey;
   bool success = true;
@@ -278,7 +305,7 @@ bool cleanupRegistryEntries() {
 
     while (RegEnumKeyExW(hKey, index++, keyName, &nameSize, NULL, NULL, NULL,
                          NULL) == ERROR_SUCCESS) {
-      if (wcsstr(keyName, L"PresentMon") != nullptr) {
+      if (IsCheckmarkPresentMonSessionKeyName(keyName)) {
         if (RegDeleteKeyW(hKey, keyName) != ERROR_SUCCESS) {
           success = false;
         }
@@ -1519,18 +1546,6 @@ void BenchmarkManager::calculateCumulativeFrameTimePercentiles() {
 
 bool BenchmarkManager::cleanupExistingETWSessions() {
   bool success = true;
-  std::wstring sessionName = L"PresentMon_Session_*";
-
-  EVENT_TRACE_PROPERTIES props;
-  InitializeTraceProperties(&props);
-
-  ULONG status =
-    ControlTraceW(0, sessionName.c_str(), &props, EVENT_TRACE_CONTROL_STOP);
-  if (status != ERROR_SUCCESS && status != ERROR_WMI_INSTANCE_NOT_FOUND &&
-      status != ERROR_INVALID_PARAMETER) {
-    LogError("Failed to stop session (Status: " + std::to_string(status) + ")");
-    success = false;
-  }
 
   HKEY hKey;
   if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
@@ -1544,13 +1559,18 @@ bool BenchmarkManager::cleanupExistingETWSessions() {
     std::vector<std::wstring> keysToDelete;
     while (RegEnumKeyExW(hKey, index++, keyName, &nameSize, NULL, NULL, NULL,
                          NULL) == ERROR_SUCCESS) {
-      if (wcsstr(keyName, L"PresentMon") != nullptr) {
+      if (IsCheckmarkPresentMonSessionKeyName(keyName)) {
         keysToDelete.push_back(keyName);
       }
       nameSize = MAX_PATH;
     }
 
     for (const auto& key : keysToDelete) {
+      if (!KillExistingEtwSession(key)) {
+        LogError("Failed to stop ETW session: " +
+                 std::string(key.begin(), key.end()));
+        success = false;
+      }
       LSTATUS status = RegDeleteKeyW(hKey, key.c_str());
       if (status != ERROR_SUCCESS) {
         LogError("Failed to delete registry key: " +

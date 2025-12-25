@@ -1,7 +1,6 @@
 #include "GPUResultRenderer.h"
 
 #include <algorithm>
-#include <iostream>
 
 #include <QApplication>
 #include <QDir>
@@ -65,9 +64,16 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
 
   // Load comparison data (network-based if available, otherwise from files)
   std::map<QString, GPUComparisonData> allComparisonData;
-  if (networkMenuData && !networkMenuData->availableGpus.isEmpty()) {
+  MenuData cachedMenu;
+  const MenuData* menuData = networkMenuData;
+  if (!menuData && downloadClient && downloadClient->isMenuCached()) {
+    cachedMenu = downloadClient->getCachedMenu();
+    menuData = &cachedMenu;
+  }
+
+  if (menuData && !menuData->availableGpus.isEmpty()) {
     LOG_INFO << "GPUResultRenderer: Using network menu data for comparison dropdowns";
-    allComparisonData = createDropdownDataFromMenu(*networkMenuData);
+    allComparisonData = createDropdownDataFromMenu(*menuData);
   } else {
     LOG_INFO << "GPUResultRenderer: Falling back to local file comparison data";
     allComparisonData = loadGPUComparisonData();
@@ -216,10 +222,6 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
   QComboBox* dropdown =
     createGPUComparisonDropdown(allComparisonData, gpuMetricsWidget, fpsVals, downloadClient);
   dropdown->setObjectName("gpu_comparison_dropdown");
-  if (downloadClient) {
-    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
-    if (idx > 0) dropdown->setCurrentIndex(idx);
-  }
 
   titleLayout->addWidget(dropdown);
   gpuMetricsLayout->addWidget(titleWidget, 1, 0, 1, 3);
@@ -246,6 +248,11 @@ QWidget* GPUResultRenderer::createGPUResultWidget(const QString& result, const M
   if (fpsUserNameLabel) fpsUserNameLabel->setText(gpuDisplayName);
 
   performanceLayout->addWidget(fpsBar);
+
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) dropdown->setCurrentIndex(idx);
+  }
 
   // Add the performance box to the metrics layout
   gpuMetricsLayout->addWidget(performanceBox, 2, 0, 1, 3);
@@ -433,23 +440,7 @@ std::map<QString, GPUComparisonData> GPUResultRenderer::loadGPUComparisonData() 
 GPUComparisonData GPUResultRenderer::convertNetworkDataToGPU(const ComponentData& networkData) {
   GPUComparisonData gpu;
   
-  LOG_INFO << "GPUResultRenderer: Converting network data to GPU comparison data";
-  
-  // Log the COMPLETE ComponentData structure
-  std::cout << "\n=== GPUResultRenderer: COMPLETE ComponentData DEBUG INFO ===" << std::endl;
-  std::cout << "Component Name: " << networkData.componentName.toStdString() << std::endl;
-  
-  // Log testData JSON
-  QJsonDocument testDataDoc(networkData.testData);
-  QString testDataString = testDataDoc.toJson(QJsonDocument::Indented);
-  std::cout << "testData JSON:\n" << testDataString.toStdString() << std::endl;
-  
-  // Log metaData JSON  
-  QJsonDocument metaDataDoc(networkData.metaData);
-  QString metaDataString = metaDataDoc.toJson(QJsonDocument::Indented);
-  std::cout << "metaData JSON:\n" << metaDataString.toStdString() << std::endl;
-  
-  std::cout << "=== END ComponentData DEBUG INFO ===\n" << std::endl;
+  LOG_DEBUG << "GPUResultRenderer: Converting network data for: " << networkData.componentName.toStdString();
   
   // Parse the testData which contains the full JSON structure
   QJsonObject rootData = networkData.testData;
@@ -458,19 +449,48 @@ GPUComparisonData GPUResultRenderer::convertNetworkDataToGPU(const ComponentData
   if (rootData.contains("benchmark_results") && rootData["benchmark_results"].isObject()) {
     QJsonObject results = rootData["benchmark_results"].toObject();
     gpu.fps = results.value("fps").toDouble();
+    if (gpu.fps <= 0) {
+      gpu.fps = results.value("avg_fps").toDouble();
+    }
+    if (gpu.fps <= 0) {
+      gpu.fps = results.value("average_fps").toDouble();
+    }
     gpu.frames = results.value("frames").toInt();
+    if (gpu.frames <= 0) {
+      gpu.frames = results.value("frame_count").toInt();
+    }
   } else if (rootData.contains("benchmarkResults") && rootData["benchmarkResults"].isObject()) {
     // Fallback for camelCase container name
     QJsonObject results = rootData["benchmarkResults"].toObject();
+    gpu.fps = results.value("fps").toDouble();
+    if (gpu.fps <= 0) {
+      gpu.fps = results.value("avgFps").toDouble();
+    }
+    if (gpu.fps <= 0) {
+      gpu.fps = results.value("averageFps").toDouble();
+    }
+    gpu.frames = results.value("frames").toInt();
+    if (gpu.frames <= 0) {
+      gpu.frames = results.value("frameCount").toInt();
+    }
+  } else if (rootData.contains("results") && rootData["results"].isObject()) {
+    // Fallback for GPUData-style payloads
+    QJsonObject results = rootData["results"].toObject();
     gpu.fps = results.value("fps").toDouble();
     gpu.frames = results.value("frames").toInt();
   } else {
     // Fallbacks if server ever sends flattened fields
     gpu.fps = rootData.value("fps").toDouble();
     if (gpu.fps <= 0) {
+      gpu.fps = rootData.value("avg_fps").toDouble();
+    }
+    if (gpu.fps <= 0) {
       gpu.fps = rootData.value("average_fps").toDouble();
     }
     gpu.frames = rootData.value("frames").toInt();
+    if (gpu.frames <= 0) {
+      gpu.frames = rootData.value("frame_count").toInt();
+    }
   }
   
   LOG_INFO << "GPUResultRenderer: Performance data - fps=" << gpu.fps 
@@ -639,7 +659,7 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
 
   auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
     QWidget* userBarContainer =
-      parentContainer->findChild<QWidget*>("userBarContainer");
+      parentContainer ? parentContainer->findChild<QWidget*>("userBarContainer") : nullptr;
     if (!userBarContainer) {
       return;
     }
@@ -783,59 +803,35 @@ QComboBox* GPUResultRenderer::createGPUComparisonDropdown(
           }
         }
 
-        QWidget* userBarContainer =
-          parentContainer->findChild<QWidget*>("userBarContainer");
-        QWidget* userBarFill = userBarContainer
-                                 ? userBarContainer->findChild<QWidget*>(
-                                     "user_bar_fill")
-                                 : nullptr;
-        if (!userBarFill) {
+        QWidget* containerWithBars = parentContainer;
+    QWidget* userBarContainer =
+      containerWithBars ? containerWithBars->findChild<QWidget*>("userBarContainer") : nullptr;
+    QLabel* percentageLabel =
+      containerWithBars ? containerWithBars->findChild<QLabel*>("percentageLabel") : nullptr;
+    if (!userBarContainer || !percentageLabel) {
           continue;
         }
 
-        QLabel* existingLabel =
-          userBarFill->findChild<QLabel*>("percentageLabel");
-        if (existingLabel) {
-          delete existingLabel;
-        }
-
-        if (hasSelection && test.compValue > 0 && test.userValue > 0) {
+        if (!hasSelection || test.compValue <= 0 || test.userValue <= 0) {
+          percentageLabel->setText("-");
+          percentageLabel->setStyleSheet(
+            "color: #888888; font-style: italic; background: transparent;");
+        } else {
           const double percentChange =
             ((test.userValue / test.compValue) - 1.0) * 100.0;
 
-          QString percentText;
-          QString percentColor;
-
+          QString percentText =
+            QString("%1%2%")
+              .arg(percentChange > 0 ? "+" : "")
+              .arg(percentChange, 0, 'f', 1);
           const bool isBetter = percentChange > 0;
-          const bool isApproxEqual = qAbs(percentChange) < 1.0;
+          QString percentColor = isBetter ? "#44FF44" : "#FF4444";
 
-          if (isApproxEqual) {
-            percentText = "≈";
-            percentColor = "#FFAA00";
-          } else {
-            percentText =
-              QString("%1%2%")
-                .arg(isBetter ? "+" : "")
-                .arg(percentChange, 0, 'f', 1);
-            percentColor = isBetter ? "#44FF44" : "#FF4444";
-          }
-
-          QHBoxLayout* overlayLayout =
-            userBarFill->findChild<QHBoxLayout*>("overlayLayout");
-          if (!overlayLayout) {
-            overlayLayout = new QHBoxLayout(userBarFill);
-            overlayLayout->setObjectName("overlayLayout");
-            overlayLayout->setContentsMargins(0, 0, 0, 0);
-          }
-
-          QLabel* percentageLabel = new QLabel(percentText);
-          percentageLabel->setObjectName("percentageLabel");
+          percentageLabel->setText(percentText);
           percentageLabel->setStyleSheet(
             QString(
               "color: %1; background: transparent; font-weight: bold;")
               .arg(percentColor));
-          percentageLabel->setAlignment(Qt::AlignCenter);
-          overlayLayout->addWidget(percentageLabel);
         }
       }
     };

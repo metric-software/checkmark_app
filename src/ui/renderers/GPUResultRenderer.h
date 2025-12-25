@@ -24,14 +24,14 @@ struct GPUComparisonData {
   QString model;
   QString fullModel;
   QString vendor;
-  int vramMB;
+  int vramMB = 0;
   QString driverVersion;
-  int pcieGen;
-  int pciLinkWidth;
+  int pcieGen = 0;
+  int pciLinkWidth = 0;
 
   // Performance metrics
-  double fps;
-  int frames;
+  double fps = 0.0;
+  int frames = 0;
 };
 
 class GPUResultRenderer {

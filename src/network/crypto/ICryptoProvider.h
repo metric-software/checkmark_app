@@ -12,7 +12,6 @@
 
 enum class CryptoAlgorithm {
     NONE,
-    RSA_OAEP,
     AES_256_GCM,
     LIBSODIUM_SEALEDBOX
 };

@@ -336,8 +336,32 @@ bool RegistrySettings::ApplyRegistryValue(
     return false;
   }
 
-  // Create backup before applying
-  BackupManager::GetInstance().CreateBackup(BackupType::Registry, false);
+  // Backups are a hard precondition for any registry writes.
+  auto& backupManager = BackupManager::GetInstance();
+  if (!backupManager.Initialize()) {
+    LOG_ERROR << "[RegistrySettings] Backup manager initialization failed; refusing to write registry";
+    return false;
+  }
+
+  if (backupManager.CheckBackupStatus(BackupType::Registry, true) !=
+      BackupStatus::CompleteBackup) {
+    if (!backupManager.CreateBackup(BackupType::Registry, true) ||
+        backupManager.CheckBackupStatus(BackupType::Registry, true) !=
+          BackupStatus::CompleteBackup) {
+      LOG_ERROR << "[RegistrySettings] Failed to create main registry backup; refusing to write registry";
+      return false;
+    }
+  }
+
+  if (backupManager.CheckBackupStatus(BackupType::Registry, false) !=
+      BackupStatus::CompleteBackup) {
+    if (!backupManager.CreateBackup(BackupType::Registry, false) ||
+        backupManager.CheckBackupStatus(BackupType::Registry, false) !=
+          BackupStatus::CompleteBackup) {
+      LOG_ERROR << "[RegistrySettings] Failed to create session registry backup; refusing to write registry";
+      return false;
+    }
+  }
 
   // Parse registry path
   HKEY targetHive;

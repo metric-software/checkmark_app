@@ -1,11 +1,15 @@
 #include "UpdateManager.h"
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -20,12 +24,142 @@
 namespace {
 // Production appcast feed hosted on Cloudflare R2
 constexpr auto kDefaultAppcastUrl = "https://downloads.checkmark.gg/appcast.xml";
+constexpr auto kDefaultDemoManifestUrl =
+  "https://downloads.checkmark.gg/benchmark/demo_manifest.json";
 
 bool isProductionHost(const QString& host) {
     const QString trimmed = host.trimmed().toLower();
     return trimmed == QLatin1String("checkmark.gg") ||
            trimmed == QLatin1String("www.checkmark.gg") ||
            trimmed == QLatin1String("downloads.checkmark.gg");
+}
+
+bool isLocalhost(const QString& host) {
+    const QString trimmed = host.trimmed().toLower();
+    return trimmed == QLatin1String("localhost") || trimmed == QLatin1String("127.0.0.1") ||
+           trimmed == QLatin1String("::1") || trimmed == QLatin1String("[::1]");
+}
+
+bool isAllowedUpdateDownloadUrl(const QUrl& url, const QUrl& appcastUrl, QString* reason) {
+    if (!url.isValid() || url.isRelative()) {
+        if (reason) *reason = QStringLiteral("invalid URL");
+        return false;
+    }
+
+    if (!url.userInfo().isEmpty()) {
+        if (reason) *reason = QStringLiteral("user info not allowed");
+        return false;
+    }
+
+    const QString scheme = url.scheme().trimmed().toLower();
+    const QString host = url.host().trimmed();
+    if (host.isEmpty()) {
+        if (reason) *reason = QStringLiteral("missing host");
+        return false;
+    }
+
+    const QString hostLower = host.toLower();
+    const bool isLocal = isLocalhost(hostLower);
+    if (scheme != QLatin1String("https") && !(isLocal && scheme == QLatin1String("http"))) {
+        if (reason) *reason = QStringLiteral("non-HTTPS URL");
+        return false;
+    }
+
+    // Always allow production hosts.
+    if (isProductionHost(hostLower)) {
+        return true;
+    }
+
+    // For non-production, only allow downloads from the same host as the appcast (dev/staging),
+    // and only when the appcast itself is not a production host.
+    const QString appcastHost = appcastUrl.host().trimmed().toLower();
+    if (!appcastHost.isEmpty() && !isProductionHost(appcastHost) && hostLower == appcastHost) {
+        return true;
+    }
+
+    if (reason) *reason = QStringLiteral("host not allowlisted");
+    return false;
+}
+
+bool isAllowedProductionHttpsUrl(const QUrl& url, QString* reason) {
+    if (!url.isValid() || url.isRelative()) {
+        if (reason) *reason = QStringLiteral("invalid URL");
+        return false;
+    }
+    if (!url.userInfo().isEmpty()) {
+        if (reason) *reason = QStringLiteral("user info not allowed");
+        return false;
+    }
+    const QString scheme = url.scheme().trimmed().toLower();
+    if (scheme != QLatin1String("https")) {
+        if (reason) *reason = QStringLiteral("non-HTTPS URL");
+        return false;
+    }
+    const QString host = url.host().trimmed();
+    if (host.isEmpty() || !isProductionHost(host)) {
+        if (reason) *reason = QStringLiteral("host not allowlisted");
+        return false;
+    }
+    return true;
+}
+
+bool isWindowsReservedDeviceName(const QString& fileName) {
+    const QString base = QFileInfo(fileName).completeBaseName().trimmed().toUpper();
+    if (base == QLatin1String("CON") || base == QLatin1String("PRN") || base == QLatin1String("AUX") ||
+        base == QLatin1String("NUL")) {
+        return true;
+    }
+    if (base.size() == 4 && base.startsWith(QLatin1String("COM")) && base.at(3).isDigit() &&
+        base.at(3) != QLatin1Char('0')) {
+        return true;
+    }
+    if (base.size() == 4 && base.startsWith(QLatin1String("LPT")) && base.at(3).isDigit() &&
+        base.at(3) != QLatin1Char('0')) {
+        return true;
+    }
+    return false;
+}
+
+QString sanitizeDemoFilename(const QString& rawFilename, QString* reason) {
+    const QString trimmed = rawFilename.trimmed();
+    if (trimmed.isEmpty()) {
+        if (reason) *reason = QStringLiteral("empty filename");
+        return QString();
+    }
+
+    const QString baseName = QFileInfo(trimmed).fileName();
+    if (baseName.isEmpty() || baseName == QLatin1String(".") || baseName == QLatin1String("..")) {
+        if (reason) *reason = QStringLiteral("invalid filename");
+        return QString();
+    }
+
+    // Defense-in-depth: reject names that Windows treats specially or that can lead to ambiguous paths.
+    if (baseName.endsWith(QLatin1Char(' ')) || baseName.endsWith(QLatin1Char('.'))) {
+        if (reason) *reason = QStringLiteral("trailing dot/space not allowed");
+        return QString();
+    }
+
+    constexpr auto kIllegalChars = "<>:\"/\\|?*";
+    for (const QChar c : QString::fromLatin1(kIllegalChars)) {
+        if (baseName.contains(c)) {
+            if (reason) *reason = QStringLiteral("illegal character in filename");
+            return QString();
+        }
+    }
+
+    if (isWindowsReservedDeviceName(baseName)) {
+        if (reason) *reason = QStringLiteral("reserved device name not allowed");
+        return QString();
+    }
+
+    return baseName;
+}
+
+bool isPathWithinDirectory(const QString& baseDir, const QString& candidatePath) {
+    const QString baseAbs = QFileInfo(baseDir).absoluteFilePath();
+    const QString candidateAbs = QFileInfo(candidatePath).absoluteFilePath();
+    const QString rel = QDir(baseAbs).relativeFilePath(candidateAbs);
+    return !rel.startsWith(QStringLiteral("..")) && !QDir::isAbsolutePath(rel);
 }
 
 QString tierToString(UpdateTier tier) {
@@ -62,10 +196,14 @@ UpdateManager::UpdateManager(QObject* parent)
     m_lastStatus.currentVersion = m_currentVersion;
     m_lastStatus.statusMessage = QStringLiteral("Not checked yet");
     m_appcastUrl = resolvedAppcastUrl();
+    m_demoManifestUrl = QString::fromUtf8(kDefaultDemoManifestUrl);
 }
 
 UpdateManager::~UpdateManager() {
     cancelDownload();
+    if (m_demoDownload && m_demoDownload->isRunning()) {
+        m_demoDownload->abort();
+    }
 }
 
 QString UpdateManager::resolvedAppcastUrl() const {
@@ -104,6 +242,7 @@ void UpdateManager::checkForUpdates(bool userInitiated) {
 
     if (m_checkInFlight) {
         LOG_WARN << "Update check already in progress, skipping new request";
+        checkForDemoUpdate(userInitiated);
         return;
     }
 
@@ -140,6 +279,9 @@ void UpdateManager::checkForUpdates(bool userInitiated) {
             reply->abort();
         }
     });
+
+    // Always check the benchmark demo manifest alongside the appcast.
+    checkForDemoUpdate(userInitiated);
 }
 
 void UpdateManager::handleAppcastReply(QNetworkReply* reply, bool /*userInitiated*/) {
@@ -164,17 +306,25 @@ void UpdateManager::handleAppcastReply(QNetworkReply* reply, bool /*userInitiate
              << " latest=" << parsed.latestVersion.toStdString()
              << " downloadUrl=" << parsed.downloadUrl.toStdString();
 
-    if (parsed.latestVersion.isEmpty() || parsed.downloadUrl.isEmpty()) {
-        UpdateStatus status = parsed;
-        status.statusMessage = parsed.statusMessage.isEmpty()
-                                   ? QStringLiteral("No update information found")
-                                   : parsed.statusMessage;
+    UpdateStatus status = parsed;
+    const QUrl appcastUrl(m_appcastUrl);
+    const QUrl downloadUrl(status.downloadUrl);
+    QString rejectionReason;
+    if (!isAllowedUpdateDownloadUrl(downloadUrl, appcastUrl, &rejectionReason)) {
+        status.downloadUrl.clear();
+        status.statusMessage = QStringLiteral("Update download URL rejected: %1").arg(rejectionReason);
+    }
+
+    if (status.latestVersion.isEmpty() || status.downloadUrl.isEmpty()) {
+        if (status.statusMessage.isEmpty()) {
+            status.statusMessage = QStringLiteral("No update information found");
+        }
         publishStatus(status, "Appcast missing version or download URL");
         emit checkFailed(status.statusMessage);
         return;
     }
 
-    publishStatus(parsed, "Appcast processed");
+    publishStatus(status, "Appcast processed");
 }
 
 UpdateStatus UpdateManager::parseAppcast(const QByteArray& payload) const {
@@ -296,6 +446,300 @@ bool UpdateManager::isCriticalValue(const QString& value) const {
            lowered == QLatin1String("critical");
 }
 
+void UpdateManager::checkForDemoUpdate(bool userInitiated) {
+    if (m_demoCheckInFlight) {
+        LOG_INFO << "Demo update already in progress, skipping new request";
+        return;
+    }
+
+    if (ApplicationSettings::getInstance().isOfflineModeEnabled()) {
+        LOG_WARN << "Offline mode enabled, skipping demo update check";
+        return;
+    }
+
+    QUrl manifestUrl(m_demoManifestUrl);
+    if (!manifestUrl.isValid()) {
+        LOG_ERROR << "Invalid demo manifest URL: " << m_demoManifestUrl.toStdString();
+        return;
+    }
+    QString manifestRejectionReason;
+    if (!isAllowedProductionHttpsUrl(manifestUrl, &manifestRejectionReason)) {
+        LOG_ERROR << "Demo manifest URL rejected: " << m_demoManifestUrl.toStdString();
+        return;
+    }
+
+    LOG_WARN << "Demo update check started (userInitiated="
+             << (userInitiated ? "true" : "false") << ") url="
+             << manifestUrl.toString().toStdString();
+
+    QNetworkRequest req(manifestUrl);
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::NoLessSafeRedirectPolicy);
+    req.setRawHeader("User-Agent", userAgent().toUtf8());
+
+    m_demoCheckInFlight = true;
+    QNetworkReply* reply = m_networkManager->get(req);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply]() { handleDemoManifestReply(reply); });
+    connect(reply, &QNetworkReply::errorOccurred, this,
+            [reply](QNetworkReply::NetworkError) {
+              if (reply->isRunning()) {
+                  reply->abort();
+              }
+            });
+    QTimer::singleShot(10000, reply, [reply]() {
+      if (reply->isRunning()) {
+          reply->abort();
+      }
+    });
+}
+
+void UpdateManager::handleDemoManifestReply(QNetworkReply* reply) {
+    const auto guard =
+      std::unique_ptr<QNetworkReply, void (*)(QNetworkReply*)>(
+        reply, [](QNetworkReply* r) {
+          if (r) r->deleteLater();
+        });
+    m_demoCheckInFlight = false;
+
+    if (!reply || reply->error() != QNetworkReply::NoError) {
+        QString error =
+          reply ? reply->errorString() : QStringLiteral("Unknown network error");
+        LOG_WARN << "Demo manifest fetch failed: " << error.toStdString();
+        return;
+    }
+
+    const QByteArray payload = reply->readAll();
+    const QJsonDocument doc = QJsonDocument::fromJson(payload);
+    if (doc.isNull() || !doc.isObject()) {
+        LOG_WARN << "Demo manifest is not valid JSON";
+        return;
+    }
+
+    const QJsonObject obj = doc.object();
+    const QString version = obj.value("version").toString().trimmed();
+    const QString filename = obj.value("filename").toString().trimmed();
+    QString downloadUrl = obj.value("url").toString().trimmed();
+    if (downloadUrl.isEmpty()) {
+        downloadUrl = obj.value("download_url").toString().trimmed();
+    }
+    const QString sha256 = obj.value("sha256").toString().trimmed().toLower();
+    const qint64 expectedSize =
+      static_cast<qint64>(obj.value("size").toVariant().toLongLong());
+
+    if (version.isEmpty() || filename.isEmpty() || downloadUrl.isEmpty()) {
+        LOG_WARN << "Demo manifest missing required fields";
+        return;
+    }
+
+    const QUrl url(downloadUrl);
+    QString demoUrlRejectionReason;
+    if (!isAllowedProductionHttpsUrl(url, &demoUrlRejectionReason)) {
+        LOG_WARN << "Demo download URL rejected: " << downloadUrl.toStdString();
+        return;
+    }
+
+    QString filenameRejectionReason;
+    const QString safeFilename = sanitizeDemoFilename(filename, &filenameRejectionReason);
+    if (safeFilename.isEmpty()) {
+        LOG_WARN << "Demo filename rejected: " << filename.toStdString();
+        return;
+    }
+    if (safeFilename != filename) {
+        LOG_WARN << "Demo filename sanitized from '" << filename.toStdString()
+                 << "' to '" << safeFilename.toStdString() << "'";
+    }
+
+    // If we already have this version and it's valid, reuse it.
+    ApplicationSettings& settings = ApplicationSettings::getInstance();
+    const QString savedVersion =
+      settings.getValue("Benchmark/LatestDemoVersion", "");
+    const QString savedPath =
+      settings.getValue("Benchmark/LatestDemoPath", "");
+
+    const QString targetDir = resolveBenchmarkStorageDir();
+    if (targetDir.isEmpty()) {
+        LOG_ERROR << "Unable to resolve benchmark storage directory";
+        return;
+    }
+    const QString targetPath = QDir(targetDir).absoluteFilePath(safeFilename);
+    if (!isPathWithinDirectory(targetDir, targetPath)) {
+        LOG_ERROR << "Resolved demo path is outside of storage directory";
+        return;
+    }
+
+    if (!savedPath.isEmpty() && savedVersion == version &&
+        isPathWithinDirectory(targetDir, savedPath) &&
+        validateDemoFile(savedPath, sha256, expectedSize)) {
+        m_latestDemoVersion = savedVersion;
+        m_latestDemoPath = savedPath;
+        LOG_INFO << "Latest demo already present and validated";
+        return;
+    }
+
+    if (QFileInfo::exists(targetPath) &&
+        validateDemoFile(targetPath, sha256, expectedSize)) {
+        m_latestDemoVersion = version;
+        m_latestDemoPath = targetPath;
+        settings.setValue("Benchmark/LatestDemoVersion", version);
+        settings.setValue("Benchmark/LatestDemoPath", targetPath);
+        LOG_INFO << "Validated existing downloaded demo";
+        return;
+    }
+
+    startDemoDownload(downloadUrl, safeFilename, version, sha256, expectedSize);
+}
+
+void UpdateManager::startDemoDownload(const QString& url,
+                                      const QString& filename,
+                                      const QString& version,
+                                      const QString& sha256,
+                                      qint64 expectedSize) {
+    if (m_demoDownload) {
+        if (m_demoDownload->isRunning()) {
+            m_demoDownload->abort();
+        }
+        m_demoDownload->deleteLater();
+        m_demoDownload = nullptr;
+    }
+
+    const QString targetDir = resolveBenchmarkStorageDir();
+    if (targetDir.isEmpty()) {
+        LOG_ERROR << "Unable to resolve benchmark storage directory";
+        return;
+    }
+    QDir().mkpath(targetDir);
+    QString filenameRejectionReason;
+    const QString safeFilename = sanitizeDemoFilename(filename, &filenameRejectionReason);
+    if (safeFilename.isEmpty()) {
+        LOG_ERROR << "Demo filename rejected";
+        return;
+    }
+    const QString targetPath = QDir(targetDir).absoluteFilePath(safeFilename);
+    if (!isPathWithinDirectory(targetDir, targetPath)) {
+        LOG_ERROR << "Resolved demo path is outside of storage directory";
+        return;
+    }
+
+    const QUrl downloadUrl(url);
+    QString demoUrlRejectionReason;
+    if (!isAllowedProductionHttpsUrl(downloadUrl, &demoUrlRejectionReason)) {
+        LOG_WARN << "Demo download URL rejected: " << url.toStdString();
+        return;
+    }
+    QNetworkRequest request(downloadUrl);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    request.setRawHeader("User-Agent", userAgent().toUtf8());
+
+    LOG_WARN << "Downloading latest benchmark demo to application folder";
+
+    m_demoDownload = m_networkManager->get(request);
+    connect(m_demoDownload, &QNetworkReply::finished, this,
+            [this, targetPath, version, sha256, expectedSize]() {
+              QNetworkReply* reply = m_demoDownload;
+              m_demoDownload = nullptr;
+              if (!reply) return;
+
+              const auto guard =
+                std::unique_ptr<QNetworkReply, void (*)(QNetworkReply*)>(
+                  reply, [](QNetworkReply* r) {
+                    if (r) r->deleteLater();
+                  });
+
+              if (reply->error() != QNetworkReply::NoError) {
+                  LOG_WARN << "Demo download failed: "
+                           << reply->errorString().toStdString();
+                  return;
+              }
+
+              QSaveFile file(targetPath);
+              if (!file.open(QIODevice::WriteOnly)) {
+                  LOG_ERROR << "Unable to open demo file for writing";
+                  return;
+              }
+
+              file.write(reply->readAll());
+              if (!file.commit()) {
+                  LOG_ERROR << "Failed to commit downloaded demo file";
+                  return;
+              }
+
+              if (!validateDemoFile(targetPath, sha256, expectedSize)) {
+                  QFile::remove(targetPath);
+                  LOG_WARN << "Downloaded demo failed validation";
+                  return;
+              }
+
+              ApplicationSettings& settings =
+                ApplicationSettings::getInstance();
+              settings.setValue("Benchmark/LatestDemoVersion", version);
+              settings.setValue("Benchmark/LatestDemoPath", targetPath);
+              m_latestDemoVersion = version;
+              m_latestDemoPath = targetPath;
+
+              LOG_INFO << "Benchmark demo downloaded and validated";
+            });
+}
+
+bool UpdateManager::validateDemoFile(const QString& path,
+                                     const QString& sha256,
+                                     qint64 expectedSize) const {
+    QFileInfo fi(path);
+    if (!fi.exists() || !fi.isFile() || !fi.isReadable()) {
+        return false;
+    }
+
+    if (expectedSize > 0 && fi.size() != expectedSize) {
+        return false;
+    }
+
+    if (!sha256.isEmpty()) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            return false;
+        }
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        if (!hash.addData(&file)) {
+            return false;
+        }
+        const QString digest =
+          QString::fromLatin1(hash.result().toHex()).toLower();
+        if (digest != sha256.toLower()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QString UpdateManager::resolveBenchmarkStorageDir() const {
+    // Prefer the application benchmark_demos folder to keep behavior consistent.
+    QString appDir = QCoreApplication::applicationDirPath() + "/benchmark_demos";
+    QDir primary(appDir);
+    if (primary.exists() || primary.mkpath(".")) {
+        return primary.absolutePath();
+    }
+
+    // Fallback to a user-writable cache.
+    QString fallback =
+      QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    if (fallback.isEmpty()) {
+        fallback = QDir::toNativeSeparators(
+          QDir::tempPath() + "/checkmark/benchmark_demos");
+    } else {
+        fallback = QDir::toNativeSeparators(
+          fallback + "/checkmark/benchmark_demos");
+    }
+
+    QDir fallbackDir(fallback);
+    if (fallbackDir.exists() || fallbackDir.mkpath(".")) {
+        return fallbackDir.absolutePath();
+    }
+
+    return QString();
+}
+
 QString UpdateManager::userAgent() const {
     return QStringLiteral("checkmark/%1").arg(m_currentVersion);
 }
@@ -363,9 +807,10 @@ void UpdateManager::downloadAndInstallLatest() {
     }
 
     const QUrl url(m_lastStatus.downloadUrl);
-    if (!url.isValid()) {
-        emit downloadFailed(QStringLiteral("Invalid download URL"));
-        LOG_ERROR << "UpdateManager: invalid download URL " << m_lastStatus.downloadUrl.toStdString();
+    QString rejectionReason;
+    if (!isAllowedUpdateDownloadUrl(url, QUrl(m_appcastUrl), &rejectionReason)) {
+        emit downloadFailed(QStringLiteral("Update download URL rejected: %1").arg(rejectionReason));
+        LOG_ERROR << "UpdateManager: rejected download URL " << m_lastStatus.downloadUrl.toStdString();
         return;
     }
 
@@ -434,6 +879,13 @@ void UpdateManager::cancelDownload() {
         m_activeDownload->abort();
         m_activeDownload->deleteLater();
         m_activeDownload = nullptr;
+    }
+    if (m_demoDownload) {
+        if (m_demoDownload->isRunning()) {
+            m_demoDownload->abort();
+        }
+        m_demoDownload->deleteLater();
+        m_demoDownload = nullptr;
     }
     if (m_downloadFile) {
         m_downloadFile->close();

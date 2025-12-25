@@ -83,7 +83,9 @@ bool BackupManager::EnsureBackupDirectoryExists() const {
   if (success) {
     QString testPath = baseDir + "/test_write_access.tmp";
     QFile testFile(testPath);
-    if (testFile.open(QIODevice::WriteOnly)) {
+    if (!testFile.open(QIODevice::WriteOnly)) {
+      success = false;
+    } else {
       testFile.write("test");
       testFile.close();
 
@@ -517,9 +519,6 @@ bool BackupManager::CreateBackup(BackupType type, bool isMain) {
       has_session_backup[type] = true;
       session_backup_timestamp[type] = QDateTime::currentDateTime();
     }
-  } else {
-    // Skip creation, backup is already complete
-    success = true;
   }
 
   return success;

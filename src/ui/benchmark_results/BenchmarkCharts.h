@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include "logging/Logger.h"
 
 #include <QDateTime>
 #include <QDir>

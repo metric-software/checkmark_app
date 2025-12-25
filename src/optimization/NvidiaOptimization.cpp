@@ -18,9 +18,6 @@ namespace optimizations {
 namespace nvidia {
 
 bool NvidiaOptimization::Apply(const OptimizationValue& value) {
-  // First ensure we have a backup
-  BackupManager::GetInstance().CreateBackup(BackupType::NvidiaSettings, false);
-
   // Convert the value to int
   if (!std::holds_alternative<int>(value)) {
     return false;
@@ -33,6 +30,40 @@ bool NvidiaOptimization::Apply(const OptimizationValue& value) {
 
   // Get the setting ID
   std::string setting_id = GetId();
+
+  const bool isKnownSetting =
+    setting_id == "nvidia_vsync" || setting_id == "nvidia_power_mode" ||
+    setting_id == "nvidia_aniso_filtering" || setting_id == "nvidia_antialiasing" ||
+    setting_id == "nvidia_monitor_tech" || setting_id == "nvidia_gdi_compat" ||
+    setting_id == "nvidia_refresh_rate" || setting_id == "nvidia_texture_quality" ||
+    setting_id == "nvidia_aniso_sample_opt" || setting_id == "nvidia_threaded_opt";
+  if (!isKnownSetting) {
+    return false;
+  }
+
+  // Backups are a hard precondition for NVIDIA settings writes.
+  auto& backupManager = BackupManager::GetInstance();
+  if (!backupManager.Initialize()) {
+    return false;
+  }
+
+  if (backupManager.CheckBackupStatus(BackupType::NvidiaSettings, true) !=
+      BackupStatus::CompleteBackup) {
+    if (!backupManager.CreateBackup(BackupType::NvidiaSettings, true) ||
+        backupManager.CheckBackupStatus(BackupType::NvidiaSettings, true) !=
+          BackupStatus::CompleteBackup) {
+      return false;
+    }
+  }
+
+  if (backupManager.CheckBackupStatus(BackupType::NvidiaSettings, false) !=
+      BackupStatus::CompleteBackup) {
+    if (!backupManager.CreateBackup(BackupType::NvidiaSettings, false) ||
+        backupManager.CheckBackupStatus(BackupType::NvidiaSettings, false) !=
+          BackupStatus::CompleteBackup) {
+      return false;
+    }
+  }
 
   // Apply the setting based on ID
   bool success = false;
@@ -70,9 +101,6 @@ bool NvidiaOptimization::Apply(const OptimizationValue& value) {
 }
 
 bool NvidiaOptimization::Revert() {
-  // Create backup before restoring default
-  BackupManager::GetInstance().CreateBackup(BackupType::NvidiaSettings, false);
-
   // Restore to default value
   return Apply(default_value);
 }

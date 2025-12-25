@@ -1137,7 +1137,7 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
 
   auto updateUserBarLayout = [](QWidget* parentContainer, int percentage) {
     QWidget* userBarContainer =
-      parentContainer->findChild<QWidget*>("userBarContainer");
+      parentContainer ? parentContainer->findChild<QWidget*>("userBarContainer") : nullptr;
     if (!userBarContainer) {
       return;
     }
@@ -1288,65 +1288,37 @@ QComboBox* MemoryResultRenderer::createMemoryComparisonDropdown(
           }
         }
 
+        QWidget* containerWithBars = parentContainer;
         QWidget* userBarContainer =
-          parentContainer->findChild<QWidget*>("userBarContainer");
-        QWidget* userBarFill = userBarContainer
-                                 ? userBarContainer->findChild<QWidget*>(
-                                     "user_bar_fill")
-                                 : nullptr;
-        if (!userBarFill) {
+          containerWithBars ? containerWithBars->findChild<QWidget*>("userBarContainer") : nullptr;
+        QLabel* percentageLabel =
+          containerWithBars ? containerWithBars->findChild<QLabel*>("percentageLabel") : nullptr;
+        if (!userBarContainer || !percentageLabel) {
           continue;
         }
 
-        QLabel* existingLabel =
-          userBarFill->findChild<QLabel*>("percentageLabel");
-        if (existingLabel) {
-          delete existingLabel;
-        }
+        if (!hasSelection || test.compValue <= 0 || test.userValue <= 0) {
+          percentageLabel->setText("-");
+          percentageLabel->setStyleSheet(
+            "color: #888888; font-style: italic; background: transparent;");
+        } else {
+          const double percentChange =
+            ((test.userValue / test.compValue) - 1.0) * 100.0;
 
-        if (hasSelection && test.compValue > 0 && test.userValue > 0) {
-          double percentChange = 0;
-          if (test.lowerIsBetter) {
-            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
-          } else {
-            percentChange = ((test.userValue / test.compValue) - 1.0) * 100.0;
-          }
-
-          QString percentText;
-          QString percentColor;
-
+          QString percentText =
+            QString("%1%2%")
+              .arg(percentChange > 0 ? "+" : "")
+              .arg(percentChange, 0, 'f', 1);
           const bool isBetter =
             (test.lowerIsBetter && percentChange < 0) ||
             (!test.lowerIsBetter && percentChange > 0);
-          const bool isApproxEqual = qAbs(percentChange) < 1.0;
+          QString percentColor = isBetter ? "#44FF44" : "#FF4444";
 
-          if (isApproxEqual) {
-            percentText = "≈";
-            percentColor = "#FFAA00";
-          } else {
-            percentText =
-              QString("%1%2%")
-                .arg(isBetter ? "+" : "")
-                .arg(percentChange, 0, 'f', 1);
-            percentColor = isBetter ? "#44FF44" : "#FF4444";
-          }
-
-          QHBoxLayout* overlayLayout =
-            userBarFill->findChild<QHBoxLayout*>("overlayLayout");
-          if (!overlayLayout) {
-            overlayLayout = new QHBoxLayout(userBarFill);
-            overlayLayout->setObjectName("overlayLayout");
-            overlayLayout->setContentsMargins(0, 0, 0, 0);
-          }
-
-          QLabel* percentageLabel = new QLabel(percentText);
-          percentageLabel->setObjectName("percentageLabel");
+          percentageLabel->setText(percentText);
           percentageLabel->setStyleSheet(
             QString(
               "color: %1; background: transparent; font-weight: bold;")
               .arg(percentColor));
-          percentageLabel->setAlignment(Qt::AlignCenter);
-          overlayLayout->addWidget(percentageLabel);
         }
       }
     };

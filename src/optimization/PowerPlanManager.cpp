@@ -262,16 +262,35 @@ bool PowerPlanManager::SetPowerPlan(const std::wstring& guid) {
   DWORD currentDisplayTimeout =
     DisplayTimeoutOptimization::GetDisplayTimeoutForCurrentPlan();
 
-  // Create backup if needed
+  // Backups are a hard precondition for any power plan writes.
   static bool backupInProgress = false;
-  if (!backupInProgress) {
-    backupInProgress = true;
-    auto& backupManager = BackupManager::GetInstance();
-    if (backupManager.CheckBackupStatus(BackupType::PowerPlan, false) !=
+  if (backupInProgress) {
+    return false;
+  }
+  backupInProgress = true;
+  bool backupsReady = false;
+  auto& backupManager = BackupManager::GetInstance();
+  if (backupManager.Initialize()) {
+    backupsReady = true;
+    if (backupManager.CheckBackupStatus(BackupType::PowerPlan, true) !=
         BackupStatus::CompleteBackup) {
-      backupManager.CreateBackup(BackupType::PowerPlan, false);
+      backupsReady =
+        backupManager.CreateBackup(BackupType::PowerPlan, true) &&
+        backupManager.CheckBackupStatus(BackupType::PowerPlan, true) ==
+          BackupStatus::CompleteBackup;
     }
-    backupInProgress = false;
+    if (backupsReady &&
+        backupManager.CheckBackupStatus(BackupType::PowerPlan, false) !=
+          BackupStatus::CompleteBackup) {
+      backupsReady =
+        backupManager.CreateBackup(BackupType::PowerPlan, false) &&
+        backupManager.CheckBackupStatus(BackupType::PowerPlan, false) ==
+          BackupStatus::CompleteBackup;
+    }
+  }
+  backupInProgress = false;
+  if (!backupsReady) {
+    return false;
   }
 
   // Remove braces if present

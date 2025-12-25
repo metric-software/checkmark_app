@@ -264,10 +264,35 @@ SettingDefinition SettingsCategoryConverter::ConvertOptimizationToSetting(
           // Record the non-existent state in backup BEFORE creating the
           // registry path
           auto& backupManager = optimizations::BackupManager::GetInstance();
+          if (!backupManager.Initialize()) {
+            LOG_WARN << "[UI] Failed to initialize backup manager; refusing to create registry setting "
+                     << opt->GetId();
+            return false;
+          }
+          if (backupManager.CheckBackupStatus(optimizations::BackupType::Registry, true) !=
+              optimizations::BackupStatus::CompleteBackup) {
+            if (!backupManager.CreateBackup(optimizations::BackupType::Registry, true) ||
+                backupManager.CheckBackupStatus(optimizations::BackupType::Registry, true) !=
+                  optimizations::BackupStatus::CompleteBackup) {
+              LOG_WARN << "[UI] Failed to create main registry backup; refusing to create setting "
+                       << opt->GetId();
+              return false;
+            }
+          }
+          if (backupManager.CheckBackupStatus(optimizations::BackupType::Registry, false) !=
+              optimizations::BackupStatus::CompleteBackup) {
+            if (!backupManager.CreateBackup(optimizations::BackupType::Registry, false) ||
+                backupManager.CheckBackupStatus(optimizations::BackupType::Registry, false) !=
+                  optimizations::BackupStatus::CompleteBackup) {
+              LOG_WARN << "[UI] Failed to create session registry backup; refusing to create setting "
+                       << opt->GetId();
+              return false;
+            }
+          }
           if (!backupManager.RecordNonExistentSetting(opt->GetId())) {
-            LOG_WARN << "[UI] Warning: Failed to record non-existent state "
-                        "for setting " << opt->GetId();
-            // Continue anyway - the backup might already exist
+            LOG_WARN << "[UI] Failed to record non-existent state for setting "
+                     << opt->GetId() << "; refusing to create registry setting";
+            return false;
           }
 
           // Get the registry settings instance and create the missing path

@@ -1,6 +1,7 @@
 #include "DemoFileManager.h"
 
 #include <iostream>
+#include <tuple>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -9,6 +10,7 @@
 #include <QFileInfo>
 #include <QSettings>
 #include <QStorageInfo>  // Add this header
+#include <QStandardPaths>
 #include <QSysInfo>
 #include <windows.h>
 
@@ -19,6 +21,46 @@ static const QString BENCHMARK_FILE_PATTERN = "benchmark_*.dem";
 static const QString BENCHMARK_PREFIX = "benchmark_";
 static const QString DEM_EXTENSION = ".dem";
 
+namespace {
+std::tuple<int, int, int> parseVersionKey(const QString& baseName, bool* ok) {
+  if (ok) {
+    *ok = false;
+  }
+
+  if (baseName.compare("benchmark", Qt::CaseInsensitive) == 0) {
+    if (ok) {
+      *ok = true;
+    }
+    return {0, 0, 0};
+  }
+
+  if (!baseName.startsWith(BENCHMARK_PREFIX, Qt::CaseInsensitive)) {
+    return {-1, -1, -1};
+  }
+
+  const QString withoutPrefix = baseName.mid(BENCHMARK_PREFIX.length());
+  const QStringList parts = withoutPrefix.split('_');
+  if (parts.size() < 3) {
+    return {-1, -1, -1};
+  }
+
+  bool okYear = false, okMonth = false, okIter = false;
+  int year = parts.at(0).toInt(&okYear);
+  int month = parts.at(1).toInt(&okMonth);
+  int iter = parts.at(2).toInt(&okIter);
+
+  const bool valid = okYear && okMonth && okIter;
+  if (ok) {
+    *ok = valid;
+  }
+  if (!valid) {
+    return {-1, -1, -1};
+  }
+
+  return {year, month, iter};
+}
+}  // namespace
+
 DemoFileManager::DemoFileManager(QObject* parent)
     : QObject(parent), m_benchmarkFileName("benchmark") {
   // Ensure we always have a valid benchmark filename, defaulting to benchmark
@@ -27,48 +69,40 @@ DemoFileManager::DemoFileManager(QObject* parent)
   }
 }
 
-QString DemoFileManager::findLatestBenchmarkFile() const {
-  // Get application directory path and the benchmark_demos subdirectory
-  QString exePath = QCoreApplication::applicationDirPath();
-  QString benchmarkDemosPath = exePath + "/benchmark_demos";
-  QDir benchmarkDir(benchmarkDemosPath);
+QString DemoFileManager::findLatestBenchmarkFile() {
+  QStringList searchPaths = getBenchmarkSearchPaths();
+  QString bestBaseName;
+  std::tuple<int, int, int> bestKey{-1, -1, -1};
 
-  // Check if the benchmark_demos directory exists
-  if (benchmarkDir.exists()) {
-    // Find benchmark file with highest number
-    QStringList demFiles = benchmarkDir.entryList(
-      QStringList() << BENCHMARK_FILE_PATTERN, QDir::Files);
+  for (const QString& path : searchPaths) {
+    QDir dir(path);
+    if (!dir.exists()) {
+      continue;
+    }
 
-    if (!demFiles.isEmpty()) {
-      // Find benchmark with highest number
-      int highestNum = 0;
-      QString bestFile;
-
-      for (const QString& file : demFiles) {
-        // Extract the number between "benchmark_" and ".dem"
-        QString numStr = file;
-        numStr.remove(BENCHMARK_PREFIX).remove(DEM_EXTENSION);
-        bool ok;
-        int num = numStr.toInt(&ok);
-        if (ok && num > highestNum) {
-          highestNum = num;
-          bestFile = file;
-        }
+    QStringList demFiles = dir.entryList(
+      QStringList() << BENCHMARK_FILE_PATTERN << "benchmark.dem", QDir::Files);
+    for (const QString& file : demFiles) {
+      QString baseName = QFileInfo(file).baseName();
+      bool ok = false;
+      std::tuple<int, int, int> key = parseVersionKey(baseName, &ok);
+      if (!ok) {
+        continue;
       }
 
-      if (!bestFile.isEmpty()) {
-        return bestFile.left(bestFile.length() - 4);  // Remove .dem extension
-      }
-
-      // Check specifically for benchmark.dem as fallback
-      if (demFiles.contains("benchmark.dem")) {
-        return "benchmark";
+      if (key > bestKey) {
+        bestKey = key;
+        bestBaseName = baseName;
       }
     }
   }
 
-  // If no files found, default to benchmark instead of benchmark_not_found
-  return "benchmark";
+  if (bestBaseName.isEmpty()) {
+    bestBaseName = "benchmark";
+  }
+
+  m_benchmarkFileName = bestBaseName;
+  return bestBaseName;
 }
 
 bool DemoFileManager::copyDemoFile(const QString& destPath) {
@@ -223,13 +257,15 @@ bool DemoFileManager::copyDemoFiles(const QString& destPath) {
 }
 
 QString DemoFileManager::findSourceDemoFile() const {
-  // Only check the executable directory
-  QString exePath = QCoreApplication::applicationDirPath();
-  // Use the benchmark filename we found
-  QString demoPath = exePath + "/" + m_benchmarkFileName + DEM_EXTENSION;
+  // Ensure we have the latest known benchmark file name
+  const_cast<DemoFileManager*>(this)->findLatestBenchmarkFile();
 
-  if (QFileInfo::exists(demoPath) && validateDemoFile(demoPath)) {
-    return QDir::toNativeSeparators(demoPath);
+  const QStringList searchPaths = getBenchmarkSearchPaths();
+  for (const QString& path : searchPaths) {
+    QString demoPath = QDir(path).filePath(m_benchmarkFileName + DEM_EXTENSION);
+    if (QFileInfo::exists(demoPath) && validateDemoFile(demoPath)) {
+      return QDir::toNativeSeparators(demoPath);
+    }
   }
 
   return QString();
@@ -237,29 +273,15 @@ QString DemoFileManager::findSourceDemoFile() const {
 
 QStringList DemoFileManager::findSourceDemoFiles() const {
   QStringList foundFiles;
-  QString exePath = QCoreApplication::applicationDirPath();
-
-  // Just check for the one file we need
-  QString fullPath = exePath + "/" + m_benchmarkFileName + DEM_EXTENSION;
-  LOG_INFO << "Checking exe directory for: " << fullPath.toStdString();
-
-  if (QFileInfo::exists(fullPath)) {
-    LOG_INFO << "Found file: [path hidden for privacy]";
-    if (validateDemoFile(fullPath)) {
-      LOG_INFO << "File validated successfully: [path hidden for privacy]";
-      foundFiles << QDir::toNativeSeparators(fullPath);
-    } else {
-      LOG_ERROR << "File validation failed: [path hidden for privacy]";
-    }
-  }
-
-  // If file not found, log warning
-  if (foundFiles.isEmpty()) {
-    LOG_WARN << "Demo file not found in exe directory: [path hidden for privacy]";
+  QString fullPath = findSourceDemoFile();
+  if (!fullPath.isEmpty()) {
+    LOG_INFO << "Found benchmark file: [path hidden for privacy]";
+    foundFiles << QDir::toNativeSeparators(fullPath);
+  } else {
+    LOG_WARN << "Demo file not found in search paths: [path hidden for privacy]";
     LOG_WARN << "Expected file: " << (m_benchmarkFileName + DEM_EXTENSION).toStdString();
-    LOG_WARN << "Make sure the demo file is placed next to the executable.";
+    LOG_WARN << "Make sure the demo file is placed in the application or cache directory.";
   }
-
   return foundFiles;
 }
 
@@ -330,6 +352,24 @@ bool DemoFileManager::isValidDemoFile(const QString& path) const {
   // TODO: Add more specific demo file validation if needed
   // For example, check file header/format
   return true;
+}
+
+QStringList DemoFileManager::getBenchmarkSearchPaths() const {
+  QStringList paths;
+
+  const QString exePath = QCoreApplication::applicationDirPath();
+  paths << (exePath + "/benchmark_demos");
+
+  QString userData =
+    QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+  if (!userData.isEmpty()) {
+    paths << (userData + "/checkmark/benchmark_demos");
+  }
+
+  // Legacy location where the installer placed the demo next to the executable
+  paths << exePath;
+
+  return paths;
 }
 
 bool DemoFileManager::checkBenchmarkPrerequisites(const QString& processName) {
@@ -576,36 +616,18 @@ QString DemoFileManager::getSavedRustPath() const {
 
 // Find the benchmark file from the application's benchmark_demos folder
 QString DemoFileManager::findAppBenchmarkFile() const {
-  QString exePath = QCoreApplication::applicationDirPath();
-  QString demosFolderPath = exePath + "/benchmark_demos";
-  QDir demosDir(demosFolderPath);
+  const_cast<DemoFileManager*>(this)->findLatestBenchmarkFile();
+  QStringList searchPaths = getBenchmarkSearchPaths();
 
-  if (!demosDir.exists()) {
-    LOG_WARN << "Benchmark demos folder not found in application directory: "
-              << demosFolderPath.toStdString();
-    return QString();
+  for (const QString& path : searchPaths) {
+    QString fullPath = QDir(path).filePath(m_benchmarkFileName + DEM_EXTENSION);
+    if (QFileInfo::exists(fullPath) && validateDemoFile(fullPath)) {
+      LOG_INFO << "Found benchmark file in application/cache directory";
+      return fullPath;
+    }
   }
 
-  // Look specifically for benchmark.dem first (preferred file)
-  QString preferredFile = "benchmark.dem";
-  if (QFileInfo(demosFolderPath + "/" + preferredFile).exists()) {
-    LOG_INFO << "Found preferred benchmark file: "
-              << preferredFile.toStdString();
-    return demosFolderPath + "/" + preferredFile;
-  }
-
-  // If preferred file not found, find any matching benchmark file
-  QStringList files =
-    demosDir.entryList(QStringList() << BENCHMARK_FILE_PATTERN, QDir::Files);
-  if (!files.isEmpty()) {
-    QString foundFile = files.first();
-    LOG_INFO << "Found benchmark file: [path hidden for privacy]"
-             ;
-    return demosFolderPath + "/" + foundFile;
-  }
-
-  LOG_WARN << "No benchmark files found in application benchmark_demos folder"
-           ;
+  LOG_WARN << "No benchmark files found in application benchmark directories";
   return QString();
 }
 
