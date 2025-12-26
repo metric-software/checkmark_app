@@ -2003,6 +2003,11 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
     LOG_INFO << "CPUResultRenderer: Using local file data for cache comparison";
     finalComparisonData = comparisonData;
   }
+  if (downloadClient) {
+    CPUComparisonData general;
+    general.model = DownloadApiClient::generalAverageLabel();
+    finalComparisonData[DownloadApiClient::generalAverageLabel()] = general;
+  }
   // Get data directly from DiagnosticDataStore
   auto& dataStore = DiagnosticDataStore::getInstance();
   const auto& cpuData = dataStore.getCPUData();
@@ -2370,12 +2375,6 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
     DiagnosticViewComponents::createAggregatedComparisonDropdown<
       CPUComparisonData>(aggregatedData, selectionCallback);
   dropdown->setObjectName("cpu_cache_comparison_dropdown");
-  if (downloadClient) {
-    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
-    if (idx > 0) {
-      dropdown->setCurrentIndex(idx);
-    }
-  }
 
   headerLayout->addWidget(dropdown);
 
@@ -2473,6 +2472,13 @@ QWidget* CPUResultRenderer::createCacheResultWidget(
 
   // Add the latency widget to the main layout
   mainLayout->addWidget(latencyWidget);
+
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) {
+      dropdown->setCurrentIndex(idx);
+    }
+  }
 
   return containerWidget;
 }

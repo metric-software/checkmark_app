@@ -512,10 +512,6 @@ QWidget* MemoryResultRenderer::processMemoryData(
     comparisonData, memMetricsWidget, bandwidthVals, latencyVals, readSpeedVals,
     writeSpeedVals, downloadClient);
   dropdown->setObjectName("memory_comparison_dropdown");
-  if (downloadClient) {
-    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
-    if (idx > 0) dropdown->setCurrentIndex(idx);
-  }
 
   titleLayout->addWidget(dropdown);
   memMetricsLayout->addWidget(titleWidget, 1, 0, 1, 2);
@@ -588,6 +584,13 @@ QWidget* MemoryResultRenderer::processMemoryData(
     QWidget* stabilitySection =
       createStabilityTestWidget(memData.stabilityTest);
     memMetricsLayout->addWidget(stabilitySection, 5, 0, 1, 2);
+  }
+
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) {
+      dropdown->setCurrentIndex(idx);
+    }
   }
 
   // Add all widgets to main layout

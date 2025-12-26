@@ -189,6 +189,10 @@ void DownloadApiClient::ensureGeneralDiagnosticsReady(GeneralCallback callback) 
 
     if (m_generalCached && m_generalFetchedAtUtc.isValid() &&
         m_generalFetchedAtUtc.secsTo(now) < kTTLSeconds) {
+        if (m_generalBackgroundMetricsCached) {
+            DiagnosticDataStore::getInstance().setGeneralBackgroundProcessMetrics(
+                m_generalBackgroundMetrics);
+        }
         if (callback) callback(true, QString());
         return;
     }
@@ -454,6 +458,8 @@ void DownloadApiClient::parseAndCacheGeneralDiagnostics(const QVariant& data) {
     }
 
     if (hasBackgroundMetrics) {
+        m_generalBackgroundMetrics = backgroundMetrics;
+        m_generalBackgroundMetricsCached = true;
         DiagnosticDataStore::getInstance().setGeneralBackgroundProcessMetrics(backgroundMetrics);
     }
 }

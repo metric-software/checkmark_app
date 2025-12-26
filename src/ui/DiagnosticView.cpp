@@ -15,6 +15,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPointer>
 #include <QSignalBlocker>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -2152,6 +2153,36 @@ void DiagnosticView::updateBackgroundProcessResults(const QString& result) {
     backgroundProcessLabel->setText(html);
     if (backgroundProcessWidget) {
       backgroundProcessWidget->setVisible(true);
+    }
+
+    if (downloadClient) {
+      QPointer<QLabel> labelPtr(backgroundProcessLabel);
+      const QString resultCopy = result;
+      downloadClient->prefetchGeneralDiagnostics(
+        [labelPtr, resultCopy](bool success, const QString& error) {
+          if (!labelPtr) {
+            return;
+          }
+          if (!success) {
+            LOG_WARN
+              << "BackgroundProcess: Failed to prefetch general diagnostics averages: "
+              << error.toStdString();
+            return;
+          }
+
+          try {
+            const QString refreshedHtml =
+              DiagnosticRenderers::BackgroundProcessRenderer::renderBackgroundProcessResults(
+                resultCopy);
+            labelPtr->setText(refreshedHtml);
+          } catch (const std::exception& e) {
+            LOG_WARN << "BackgroundProcess: Failed to refresh typical values: "
+                     << e.what();
+          } catch (...) {
+            LOG_WARN
+              << "BackgroundProcess: Failed to refresh typical values (unknown exception)";
+          }
+        });
     }
 
     LOG_INFO << "BackgroundProcess: Results displayed successfully"

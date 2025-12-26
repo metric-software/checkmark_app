@@ -12,6 +12,8 @@
 #include <QJsonObject>
 #include <QDateTime>
 
+#include "../../diagnostic/DiagnosticDataStore.h"
+
 struct ComponentData {
     QString componentName;
     QJsonObject testData;
@@ -66,6 +68,9 @@ private:
     QJsonObject m_generalMeta;
     QMap<QString, ComponentData> m_generalComponents; // cpu/gpu/memory/drive (+ future)
     QList<GeneralCallback> m_generalWaiters;
+
+    DiagnosticDataStore::BackgroundProcessGeneralMetrics m_generalBackgroundMetrics;
+    bool m_generalBackgroundMetricsCached = false;
     
     MenuData parseMenuData(const QVariant& data) const;
     ComponentData parseComponentData(const QVariant& data) const;

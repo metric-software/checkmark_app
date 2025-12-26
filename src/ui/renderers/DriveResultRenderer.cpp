@@ -176,10 +176,6 @@ QWidget* DriveResultRenderer::processDriveData(
     comparisonData, driveMetricsWidget, readSpeedVals, writeSpeedVals, iopsVals,
     accessTimeVals, downloadClient);
   dropdown->setObjectName("drive_comparison_dropdown");
-  if (downloadClient) {
-    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
-    if (idx > 0) dropdown->setCurrentIndex(idx);
-  }
 
   titleLayout->addWidget(dropdown);
   mainLayout->addWidget(titleWidget);
@@ -252,6 +248,13 @@ QWidget* DriveResultRenderer::processDriveData(
 
   // Add the performance box to main layout
   mainLayout->addWidget(performanceBox);
+
+  if (downloadClient) {
+    const int idx = dropdown->findText(DownloadApiClient::generalAverageLabel());
+    if (idx > 0) {
+      dropdown->setCurrentIndex(idx);
+    }
+  }
 
   return driveMetricsWidget;
 }
