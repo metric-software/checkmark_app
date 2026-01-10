@@ -72,6 +72,10 @@ class ApplicationSettings {
   bool getDetailedLogsEnabled() const;
   void setDetailedLogsEnabled(bool enabled);
 
+  // Full registry export setting
+  bool getFullRegistryExportEnabled() const;
+  void setFullRegistryExportEnabled(bool enabled);
+
   // Automatic data upload setting
   bool getAutomaticDataUploadEnabled() const;
   void setAutomaticDataUploadEnabled(bool enabled);

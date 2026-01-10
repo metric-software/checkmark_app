@@ -155,9 +155,14 @@ bool SettingsChecker::LoadRegistrySettings() {
 
 bool SettingsChecker::LoadNvidiaSettings() {
   try {
-    // Initialize NVIDIA control panel with timeout protection
     auto& nvidiaCP = optimizations::nvidia::NvidiaControlPanel::GetInstance();
 
+    // If no NVIDIA GPU is present, skip silently (optional component)
+    if (!nvidiaCP.HasNvidiaGPU()) {
+      return true;
+    }
+
+    // Initialize NVIDIA control panel with timeout protection
     bool initialized = false;
     try {
       initialized = nvidiaCP.Initialize();

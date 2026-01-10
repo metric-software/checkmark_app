@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include("${CMAKE_SOURCE_DIR}/cmake/external/presentmon.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/external/nvapi.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/external/protobuf.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/shaders.cmake")
 
 include("${CMAKE_SOURCE_DIR}/cmake/external/licenses.cmake")
 
@@ -29,10 +30,17 @@ endif()
 
 qt_add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${RESOURCES} ${QTRESOURCES})
 
+compile_gpu_test_shaders(${PROJECT_NAME})
+
 # qt post build step - bundles runtime dependencies for deployment
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD COMMAND Qt6::windeployqt ARGS $<TARGET_FILE:${PROJECT_NAME}>)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/misc $<TARGET_FILE_DIR:${PROJECT_NAME}> VERBATIM)
+
+# Ensure no legacy runtime shader compiler DLL is bundled (we precompile shaders)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:${PROJECT_NAME}>/D3DCompiler_47.dll"
+  COMMENT "Removing D3DCompiler_47.dll (precompiled shaders are embedded)")
 
 # Copy generated appcast (version-synced with version/app_version.iss)
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

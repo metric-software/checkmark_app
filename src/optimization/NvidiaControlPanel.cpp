@@ -1,5 +1,6 @@
 #include "NvidiaControlPanel.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -15,6 +16,21 @@
 
 namespace optimizations {
 namespace nvidia {
+
+namespace {
+
+NvAPI_Status SafeNvApiCall(const char* context,
+                           const std::function<NvAPI_Status()>& fn) {
+  try {
+    return fn();
+  } catch (...) {
+    LOG_ERROR << "NvidiaControlPanel: " << context
+              << " threw an exception; treating as NVAPI_ERROR";
+    return NVAPI_ERROR;
+  }
+}
+
+}  // namespace
 
 // Function to get error string for NvAPI errors
 std::string GetNvAPIErrorString(NvAPI_Status status) {
@@ -36,17 +52,24 @@ NvidiaControlPanel::NvidiaControlPanel()
 }
 
 NvidiaControlPanel::~NvidiaControlPanel() {
-  if (initialized) {
-    // Clean up NVIDIA driver settings
-    if (session_handle) {
-      NvAPI_DRS_DestroySession(static_cast<NvDRSSessionHandle>(session_handle));
-      session_handle = nullptr;
-      base_profile_handle = nullptr;
-    }
-
-    // Unload the NVAPI
+  bool wasInitialized = initialized;
+  ResetSession();
+  if (wasInitialized) {
     NvAPI_Unload();
   }
+}
+
+void NvidiaControlPanel::ResetSession() {
+  if (session_handle) {
+    SafeNvApiCall("NvAPI_DRS_DestroySession",
+                  [this]() {
+                    return NvAPI_DRS_DestroySession(
+                      static_cast<NvDRSSessionHandle>(session_handle));
+                  });
+  }
+  session_handle = nullptr;
+  base_profile_handle = nullptr;
+  initialized = false;
 }
 
 bool NvidiaControlPanel::Initialize() {
@@ -58,7 +81,9 @@ bool NvidiaControlPanel::Initialize() {
   }
 
   // (0) Initialize NVAPI
-  NvAPI_Status status = NvAPI_Initialize();
+  NvAPI_Status status = SafeNvApiCall("NvAPI_Initialize", []() {
+    return NvAPI_Initialize();
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR << "NvidiaControlPanel: Initialize failed - Failed to initialize NVAPI: "
               << GetNvAPIErrorString(status);
@@ -67,7 +92,9 @@ bool NvidiaControlPanel::Initialize() {
 
   // (1) Create the session handle to access driver settings
   NvDRSSessionHandle hSession = nullptr;
-  status = NvAPI_DRS_CreateSession(&hSession);
+  status = SafeNvApiCall("NvAPI_DRS_CreateSession", [&]() {
+    return NvAPI_DRS_CreateSession(&hSession);
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR
       << "NvidiaControlPanel: Initialize failed - Failed to create DRS session: "
@@ -78,25 +105,27 @@ bool NvidiaControlPanel::Initialize() {
   session_handle = hSession;
 
   // (2) Load all the system settings into the session
-  status = NvAPI_DRS_LoadSettings(hSession);
+  status = SafeNvApiCall("NvAPI_DRS_LoadSettings", [&]() {
+    return NvAPI_DRS_LoadSettings(hSession);
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR
       << "NvidiaControlPanel: Initialize failed - Failed to load DRS settings: "
       << GetNvAPIErrorString(status);
-    NvAPI_DRS_DestroySession(hSession);
-    session_handle = nullptr;
+    ResetSession();
     NvAPI_Unload();
     return false;
   }
 
   // (3) Obtain the Base profile
   NvDRSProfileHandle hProfile = nullptr;
-  status = NvAPI_DRS_GetBaseProfile(hSession, &hProfile);
+  status = SafeNvApiCall("NvAPI_DRS_GetBaseProfile", [&]() {
+    return NvAPI_DRS_GetBaseProfile(hSession, &hProfile);
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR << "NvidiaControlPanel: Initialize failed - Failed to get base profile: "
               << GetNvAPIErrorString(status);
-    NvAPI_DRS_DestroySession(hSession);
-    session_handle = nullptr;
+    ResetSession();
     NvAPI_Unload();
     return false;
   }
@@ -108,7 +137,9 @@ bool NvidiaControlPanel::Initialize() {
 
 bool NvidiaControlPanel::HasNvidiaGPUImpl() {
   // Initialize NVAPI
-  NvAPI_Status status = NvAPI_Initialize();
+  NvAPI_Status status = SafeNvApiCall("NvAPI_Initialize (probe)", []() {
+    return NvAPI_Initialize();
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR
       << "NvidiaControlPanel: HasNvidiaGPUImpl failed - Failed to initialize NVAPI: "
@@ -120,17 +151,23 @@ bool NvidiaControlPanel::HasNvidiaGPUImpl() {
   NvPhysicalGpuHandle gpus[NVAPI_MAX_PHYSICAL_GPUS] = {nullptr};
   NvU32 gpu_count = 0;
 
-  status = NvAPI_EnumPhysicalGPUs(gpus, &gpu_count);
+  status = SafeNvApiCall("NvAPI_EnumPhysicalGPUs", [&]() {
+    return NvAPI_EnumPhysicalGPUs(gpus, &gpu_count);
+  });
   if (status != NVAPI_OK) {
     LOG_ERROR
       << "NvidiaControlPanel: HasNvidiaGPUImpl failed - Failed to enumerate GPUs: "
       << GetNvAPIErrorString(status);
-    NvAPI_Unload();
+    SafeNvApiCall("NvAPI_Unload (probe failure)", []() {
+      return NvAPI_Unload();
+    });
     return false;
   }
 
   // Unload NVAPI for now - we'll initialize it properly when needed
-  NvAPI_Unload();
+  SafeNvApiCall("NvAPI_Unload (probe success)", []() {
+    return NvAPI_Unload();
+  });
 
   return (gpu_count > 0);
 }

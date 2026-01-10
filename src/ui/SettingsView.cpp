@@ -79,6 +79,13 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
     "Disable all network features. When enabled, the app will not check updates, fetch comparison data, or upload anything.",
     settings_widget);
   settings_layout->addWidget(offline_mode_toggle_);
+
+  // Full registry export toggle
+  full_registry_export_toggle_ = new SettingsToggle(
+    "full_registry_export", "Generate full registry backup during checks",
+    "Create a one-time full registry export when checking settings. Can be slow and large; disable to keep the app responsive.",
+    settings_widget);
+  settings_layout->addWidget(full_registry_export_toggle_);
   
   // Add space between categories
   settings_layout->addSpacing(25);
@@ -126,6 +133,8 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   bool allow_data_collection = app_settings_instance.getAllowDataCollection();
   bool offline_mode_enabled = app_settings_instance.isOfflineModeEnabled();
   bool detailed_logs_enabled = app_settings_instance.getDetailedLogsEnabled();
+  bool full_registry_export_enabled =
+    app_settings_instance.getFullRegistryExportEnabled();
   // Set toggle states (using setEnabled as per existing pattern for
   // SettingsToggle)
   experimental_features_toggle_->setEnabled(experimental_enabled);
@@ -136,6 +145,7 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
   allow_data_collection_toggle_->setEnabled(offline_mode_enabled ? false : allow_data_collection);
   offline_mode_toggle_->setEnabled(offline_mode_enabled);
   detailed_logs_toggle_->setEnabled(detailed_logs_enabled);
+  full_registry_export_toggle_->setEnabled(full_registry_export_enabled);
   // Show dependent toggles as greyed out when offline overrides them
   if (offline_mode_enabled) {
     if (allow_data_collection_toggle_) {
@@ -160,6 +170,8 @@ SettingsView::SettingsView(QWidget* parent) : QWidget(parent) {
           &SettingsView::OnOfflineModeChanged);
   connect(detailed_logs_toggle_, &SettingsToggle::stateChanged, this,
           &SettingsView::OnDetailedLogsChanged);
+  connect(full_registry_export_toggle_, &SettingsToggle::stateChanged, this,
+          &SettingsView::OnFullRegistryExportChanged);
   settings_layout->addSpacing(20);
   
   // Reset Settings and Delete Data buttons (first section)
@@ -850,6 +862,11 @@ void SettingsView::saveSettings() {
     settings.setDetailedLogsEnabled(detailed_logs_toggle_->isEnabled());
   }
 
+  if (full_registry_export_toggle_) {
+    settings.setFullRegistryExportEnabled(
+      full_registry_export_toggle_->isEnabled());
+  }
+
   // Instead of using saveSettings(), directly save to settings file
   // This is typically done automatically when setting values in
   // ApplicationSettings but we can force a save here by writing settings to
@@ -868,6 +885,8 @@ void SettingsView::saveSettings() {
                        settings.isOfflineModeEnabled());
   appSettings.setValue("DetailedLogs",
                        settings.getDetailedLogsEnabled());
+  appSettings.setValue("Backup/EnableFullRegistryExport",
+                       settings.getFullRegistryExportEnabled());
   appSettings.sync();  // Ensure settings are written to disk
 }
 
@@ -1174,6 +1193,11 @@ void SettingsView::OnDetailedLogsChanged(const QString& id, bool enabled) {
   } else {
     logger.setLevel(ERROR_LEVEL);  // Only ERROR and FATAL
   }
+}
+
+void SettingsView::OnFullRegistryExportChanged(const QString& id,
+                                               bool enabled) {
+  ApplicationSettings::getInstance().setFullRegistryExportEnabled(enabled);
 }
 
 void SettingsView::OnRequestDataClicked() {

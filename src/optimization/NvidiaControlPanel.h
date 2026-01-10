@@ -418,6 +418,7 @@ class NvidiaControlPanel {
 
   // Implementation of HasNvidiaGPU
   bool HasNvidiaGPUImpl();
+  void ResetSession();
 
   // Flag indicating if an NVIDIA GPU is present
   bool has_nvidia_gpu;

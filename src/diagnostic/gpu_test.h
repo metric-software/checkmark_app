@@ -90,6 +90,7 @@ class GPUTest {
   // Camera matrices
   DirectX::XMMATRIX viewMatrix;  // Camera view transformation
   DirectX::XMMATRIX projMatrix;  // Perspective projection
+  D3D_FEATURE_LEVEL featureLevel;
 
   // Physics boundary constraints
   float minX, maxX;  // X-axis movement limits

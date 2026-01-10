@@ -6,92 +6,12 @@
 #include <chrono>
 #include <iostream>
 #include <random>
-
-#include <d3dcompiler.h>
+#include <span>
 
 #include "diagnostic/DiagnosticDataStore.h"
+#include "gpu_test_shaders.h"  // Precompiled/embedded shader bytecode (no runtime compiler)
 
 using namespace DirectX;
-
-// --------------------------------------------------------------------------------------
-// Simple vertex/pixel shaders with lighting
-// --------------------------------------------------------------------------------------
-static const char* vertexShaderCode = R"(
-cbuffer cbMatrices : register(b0)
-{
-    matrix world;
-    matrix view;
-    matrix proj;
-};
-
-cbuffer cbLighting : register(b1)
-{
-    float4 lightDirection; // Directional light direction
-    float4 lightColor;     // Light color
-};
-
-struct VS_INPUT
-{
-    float3 pos   : POSITION;
-    float4 color : COLOR;
-    float3 normal : NORMAL; // New normal attribute
-};
-
-struct VS_OUTPUT
-{
-    float4 pos     : SV_POSITION;
-    float4 color   : COLOR;
-    float3 normal  : NORMAL; // Pass normal to pixel shader
-};
-
-VS_OUTPUT main(VS_INPUT input)
-{
-    VS_OUTPUT output;
-    float4 worldPos = mul(float4(input.pos, 1.0f), world);
-    float4 viewPos  = mul(worldPos, view);
-    output.pos      = mul(viewPos, proj);
-    output.color    = input.color;
-    // Transform normal to world space
-    float3 worldNormal = normalize(mul(input.normal, (float3x3)world));
-    output.normal    = worldNormal;
-    return output;
-}
-)";
-
-static const char* pixelShaderCode = R"(
-cbuffer cbLighting : register(b1)
-{
-    float4 lightDirection;  // Directional light direction
-    float4 lightColor;      // Light color
-};
-
-struct PS_INPUT
-{
-    float4 pos     : SV_POSITION;
-    float4 color   : COLOR;
-    float3 normal  : NORMAL; // Received normal from vertex shader
-};
-
-float4 main(PS_INPUT input) : SV_Target
-{
-    // Basic Lambertian diffuse lighting
-    float3 normal = normalize(input.normal);
-    float3 lightDir = normalize(-lightDirection.xyz); // Assuming lightDirection is the direction light is coming from
-    float diffuse = saturate(dot(normal, lightDir));
-
-    // Fake shadow: darker color if diffuse is low
-    float shadowFactor = diffuse < 0.3f ? 0.5f : 1.0f;
-
-    // Combine vertex color with light color and diffuse factor
-    float4 finalColor = input.color * lightColor * diffuse * shadowFactor;
-
-    // Add ambient term
-    float ambient = 0.2f;
-    finalColor += input.color * ambient;
-
-    return finalColor;
-}
-)";
 
 // --------------------------------------------------------------------------------------
 
@@ -103,7 +23,8 @@ GPUTest::GPUTest()
       sphereVertexBuffer(nullptr), sphereIndexBuffer(nullptr),
       matricesCB(nullptr), lightingCB(nullptr), vertexShader(nullptr),
       pixelShader(nullptr), inputLayout(nullptr), wireframeRS(nullptr),
-      sphereIndexCount(0), gridLineCount(0) {}
+      sphereIndexCount(0), gridLineCount(0),
+      featureLevel(D3D_FEATURE_LEVEL_11_0) {}
 
 GPUTest::~GPUTest() {
   if (wireframeRS) wireframeRS->Release();
@@ -203,6 +124,7 @@ bool GPUTest::Initialize(HWND hwnd) {
           LOG_WARN << "Unknown";
       }
       // Removed std::endl - Logger handles line endings
+      featureLevel = createdFeatureLevel;
       break;
     }
   }
@@ -625,27 +547,32 @@ bool GPUTest::CreateSphereGeometry() {
 
 // --------------------------------------------------------------------------------------
 bool GPUTest::CreateShaders() {
-  // Compile & create VS
-  ID3DBlob* vsBlob = nullptr;
-  ID3DBlob* psBlob = nullptr;
-  ID3DBlob* errBlob = nullptr;
-
-  HRESULT hr =
-    D3DCompile(vertexShaderCode, strlen(vertexShaderCode), nullptr, nullptr,
-               nullptr, "main", "vs_4_0", 0, 0, &vsBlob, &errBlob);
-  if (FAILED(hr)) {
-    if (errBlob) {
-      LOG_ERROR << "Vertex shader error: " << (char*)errBlob->GetBufferPointer();
-      errBlob->Release();
-    }
+  if (featureLevel < D3D_FEATURE_LEVEL_9_1) {
+    LOG_ERROR << "Unsupported D3D feature level for GPU test shaders.";
     return false;
   }
-  hr =
-    device->CreateVertexShader(vsBlob->GetBufferPointer(),
-                               vsBlob->GetBufferSize(), nullptr, &vertexShader);
+
+  // Prefer SM5 for FL 11.x; fall back to SM4 for FL 10.x (modern Win10/11)
+  if (featureLevel < D3D_FEATURE_LEVEL_10_0) {
+    LOG_ERROR << "Unsupported D3D feature level for GPU test shaders (need >= 10.0).";
+    return false;
+  }
+
+  const bool supportsLevel11 = featureLevel >= D3D_FEATURE_LEVEL_11_0;
+  auto to_span = [](const auto& arr) {
+    return std::span<const std::uint8_t>(arr.data(), arr.size());
+  };
+  const std::span<const std::uint8_t> vsBlob =
+    supportsLevel11 ? to_span(gpu_test_shaders::kVS_5_0)
+                    : to_span(gpu_test_shaders::kVS_4_0);
+  const std::span<const std::uint8_t> psBlob =
+    supportsLevel11 ? to_span(gpu_test_shaders::kPS_5_0)
+                    : to_span(gpu_test_shaders::kPS_4_0);
+
+  HRESULT hr = device->CreateVertexShader(
+    vsBlob.data(), static_cast<UINT>(vsBlob.size()), nullptr, &vertexShader);
   if (FAILED(hr)) {
-    LOG_ERROR << "Failed to create VS.";
-    vsBlob->Release();
+    LOG_ERROR << "Failed to create vertex shader.";
     return false;
   }
 
@@ -660,30 +587,18 @@ bool GPUTest::CreateShaders() {
   };
 
   // **Corrected element count from 2 to 3**
-  hr = device->CreateInputLayout(layoutDesc, 3,  // Changed from 2 to 3
-                                 vsBlob->GetBufferPointer(),
-                                 vsBlob->GetBufferSize(), &inputLayout);
-  vsBlob->Release();
+  hr = device->CreateInputLayout(
+    layoutDesc, 3, vsBlob.data(), static_cast<UINT>(vsBlob.size()),
+    &inputLayout);
   if (FAILED(hr)) {
     LOG_ERROR << "Failed to create input layout.";
     return false;
   }
 
-  // Compile & create PS
-  hr = D3DCompile(pixelShaderCode, strlen(pixelShaderCode), nullptr, nullptr,
-                  nullptr, "main", "ps_4_0", 0, 0, &psBlob, &errBlob);
-  if (FAILED(hr)) {
-    if (errBlob) {
-      LOG_ERROR << "Pixel shader error: " << (char*)errBlob->GetBufferPointer();
-      errBlob->Release();
-    }
-    return false;
-  }
   hr = device->CreatePixelShader(
-    psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &pixelShader);
-  psBlob->Release();
+    psBlob.data(), static_cast<UINT>(psBlob.size()), nullptr, &pixelShader);
   if (FAILED(hr)) {
-    LOG_ERROR << "Failed to create PS.";
+    LOG_ERROR << "Failed to create pixel shader.";
     return false;
   }
 

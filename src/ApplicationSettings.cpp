@@ -8,7 +8,7 @@
 
 #include "logging/Logger.h"
 
-#include "hardware/SystemMetricsValidator.h"  // For ValidationResult enum
+#include "hardware/SystemMetricsValidator.h"  // For ValidationResult enum.
 
 ApplicationSettings::ApplicationSettings()
     : settings(getSettingsFilePath(), QSettings::IniFormat) {
@@ -215,6 +215,15 @@ bool ApplicationSettings::getDetailedLogsEnabled() const {
 
 void ApplicationSettings::setDetailedLogsEnabled(bool enabled) {
   settings.setValue("Features/DetailedLogsEnabled", enabled);
+  settings.sync();  // Force write to disk immediately
+}
+
+bool ApplicationSettings::getFullRegistryExportEnabled() const {
+  return settings.value("Backup/EnableFullRegistryExport", false).toBool();
+}
+
+void ApplicationSettings::setFullRegistryExportEnabled(bool enabled) {
+  settings.setValue("Backup/EnableFullRegistryExport", enabled);
   settings.sync();  // Force write to disk immediately
 }
 

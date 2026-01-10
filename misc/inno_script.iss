@@ -45,7 +45,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "..\build\Release\checkmark.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; App binaries and runtime dependencies from release folder (excluding results directories)
-Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*,*.lib,*.exp,*.pdb,*.ipdb,*.iobj,*.ilk,*.obj,*.pch,*.tlog,*.log,*.lastbuildstate,*.idb,*.iss,*.xml.in,appcast.xml"
+Source: "..\build\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "benchmark_results\*,diagnostic_results\*,debug logging\*,profiles\*,installer\*,comprison_data_files\*,benchmark_user_data\*,component_data\*,showcase_files\*,*.lib,*.exp,*.pdb,*.ipdb,*.iobj,*.ilk,*.obj,*.pch,*.tlog,*.log,*.lastbuildstate,*.idb,*.iss,*.xml.in,appcast.xml,D3DCompiler_47.dll,d3dcompiler_47.dll"
 
 ; License files (include only if present)
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

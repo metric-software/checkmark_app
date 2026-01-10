@@ -106,7 +106,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   CUDA::nvml nvidia::nvapi
   spdlog::spdlog protobuf::libprotobuf diagnostic_proto
   benchmark_common_proto benchmark_public_proto benchmark_full_proto benchmark_upload_proto
-  d3d11.lib dxgi.lib d3dcompiler.lib
+  d3d11.lib dxgi.lib
   powrprof.lib Pdh.Lib shcore.lib WS2_32.lib
   Crypt32.lib iphlpapi.lib wbemuuid.lib
   dwmapi.lib wininet.dll setupapi.lib

@@ -8,11 +8,16 @@
 
 #include <iostream>
 #include "../logging/Logger.h"
+#include "../ApplicationSettings.h"
+
+#include <atomic>
+#include <thread>
 
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QStorageInfo>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -383,6 +388,13 @@ bool BackupManager::CreateBackup(BackupType type, bool isMain) {
     LOG_INFO
       << "[BackupManager::CreateBackup] Processing FullRegistryExport, isMain="
       << (isMain ? "true" : "false");
+
+    // Respect user preference for full registry export
+    if (!ApplicationSettings::getInstance().getFullRegistryExportEnabled()) {
+      LOG_INFO << "[BackupManager::CreateBackup] Skipping FullRegistryExport - disabled in settings";
+      backupInProgress[type] = false;
+      return true;
+    }
   }
 
   // Check if we should create or update this backup
@@ -470,6 +482,54 @@ bool BackupManager::CreateBackup(BackupType type, bool isMain) {
 
   bool success = false;
   if (shouldCreate) {
+    if (type == BackupType::FullRegistryExport) {
+      // Avoid blocking the UI: run full export asynchronously with guardrails.
+      static std::atomic_bool exportRunning{false};
+
+      if (!isMain) {
+        LOG_INFO << "[BackupManager::CreateBackup] Skipping FullRegistryExport for session backups (main export is sufficient)";
+        backupInProgress[type] = false;
+        return true;
+      }
+
+      if (exportRunning.load()) {
+        LOG_INFO << "[BackupManager::CreateBackup] FullRegistryExport already running, skipping duplicate request";
+        backupInProgress[type] = false;
+        return true;
+      }
+
+      // Disk space preflight: require at least 600 MB free
+      QString targetPath = GetBackupFilePath(type, isMain);
+      QFileInfo targetInfo(targetPath);
+      QStorageInfo storage(targetInfo.absolutePath());
+      if (storage.isValid() && storage.bytesAvailable() < 600LL * 1024 * 1024) {
+        LOG_WARN << "[BackupManager::CreateBackup] Skipping FullRegistryExport - insufficient free space ("
+                 << storage.bytesAvailable() << " bytes available)";
+        backupInProgress[type] = false;
+        return true;
+      }
+
+      exportRunning = true;
+      std::thread([this, isMain]() {
+        bool ok = false;
+        try {
+          ok = BackupFullRegistryExport(isMain);
+        } catch (...) {
+          ok = false;
+        }
+        if (!ok) {
+          LOG_WARN << "[BackupManager::CreateBackup] FullRegistryExport async run failed";
+        } else {
+          LOG_INFO << "[BackupManager::CreateBackup] FullRegistryExport async run completed";
+        }
+        exportRunning = false;
+      }).detach();
+
+      LOG_INFO << "[BackupManager::CreateBackup] FullRegistryExport started asynchronously";
+      backupInProgress[type] = false;
+      return true;
+    }
+
     switch (type) {
       case BackupType::Registry:
         success = BackupRegistrySettings(isMain);
